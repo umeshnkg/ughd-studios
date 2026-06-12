@@ -38,7 +38,7 @@ export async function onRequestPost({ request, env }) {
       body: JSON.stringify({
         name: `New Inquiry — ${cleanName}`,
         description,
-        status: 'Open',
+        status: 'fresh leads',
         priority: budget === '$20K+' ? 2 : 3,
       }),
     }),
