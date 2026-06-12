@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UGHD Studios — Work</title>
+    <meta
+      name="description"
+      content="Leading Creative Studio crafting high-end visualexperiances for musicians & labels"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/about.css" />
+    <link rel="stylesheet" href="/src/careers.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="vignette"></div>
+
+    <!-- ===== Chrome ===== -->
+    <div class="topblur" aria-hidden="true"></div>
+    <header class="chrome chrome--top">
+      <a class="logo" href="/" data-spa="work" aria-label="UGHD Studios">
+        <img src="/UGHD-Studios-logo-white.webp" alt="UGHD Studios" class="logo__icon" />
+      </a>
+
+      <button class="sound" id="soundToggle" type="button">
+        <span class="sound__bars" aria-hidden="true"
+          ><i></i><i></i><i></i><i></i><i></i></span
+        >
+        SOUND [<span id="soundState">ON</span>]
+      </button>
+
+      <div class="masthead">
+        <p class="masthead__copy">
+          LEADING CREATIVE STUDIO CRAFTING HIGH-END<br />
+          VISUAL EXPERIENCES FOR MUSICIANS &amp; LABELS.
+        </p>
+        <div class="masthead__locales">
+          <p><span class="dot dot--moon">☾</span> NEWARK, DE <b id="clock-us"></b> GMT-4</p>
+          <p><span class="dot dot--sun">●</span> COLOMBO, LK <b id="clock-lk"></b> GMT+5:30</p>
+        </div>
+      </div>
+
+      <button class="btn btn--light btn--talk" type="button">Let's Talk</button>
+    </header>
+
+    <footer class="chrome chrome--bottom">
+      <div class="viewtoggle">
+        <button class="viewtoggle__btn is-active" aria-label="Grid view" type="button">
+          <svg viewBox="0 0 16 16" width="15" height="15"><path fill="currentColor" d="M1 1h6v6H1zM9 1h6v6H9zM1 9h6v6H1zM9 9h6v6H9z"/></svg>
+        </button>
+        <button class="viewtoggle__btn" aria-label="List view" type="button">
+          <svg viewBox="0 0 16 16" width="15" height="15"><path fill="currentColor" d="M1 2h2v2H1zM5 2h10v2H5zM1 7h2v2H1zM5 7h10v2H5zM1 12h2v2H1zM5 12h10v2H5z"/></svg>
+        </button>
+      </div>
+
+      <nav class="mainnav">
+        <a class="mainnav__item is-active" href="/" data-spa="work">Work</a>
+        <a class="mainnav__item" href="/about.html" data-spa="about">About</a>
+        <a class="mainnav__item" href="/careers.html" data-spa="careers">Careers</a>
+      </nav>
+
+      <div class="filterwrap">
+        <div class="filterpanel" id="filterPanel"></div>
+        <button class="btn btn--dark" id="filterBtn" type="button">Filter</button>
+      </div>
+    </footer>
+
+    <!-- ===== Page card (About etc. slide up over the gallery) ===== -->
+    <section class="pagecard" id="pageCard" aria-hidden="true">
+      <div class="pagecard__scroll" id="pageCardScroll">
+        <div id="pageCardContent"></div>
+      </div>
+    </section>
+
+    <!-- ===== Detail overlay ===== -->
+    <section class="detail" id="detail" aria-hidden="true">
+      <div class="detail__inner">
+        <div class="detail__bar">
+          <button class="detail__back" id="detailBack" type="button">[&larr; BACK TO WORK]</button>
+          <span class="detail__client" id="detailClient"></span>
+        </div>
+        <h1 class="detail__title" id="detailTitle"></h1>
+        <div class="detail__meta">
+          <span class="detail__tags" id="detailTags"></span>
+          <span class="detail__year" id="detailYear"></span>
+        </div>
+        <div class="detail__media" id="detailMedia"></div>
+        <p class="detail__desc" id="detailDesc"></p>
+      </div>
+    </section>
+
+    <!-- ===== Loader ===== -->
+    <div class="loader" id="loader">
+      <div class="loader__logo">UGHD STUDIOS<span>®</span></div>
+      <div class="loader__pct" id="loaderPct">0%</div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

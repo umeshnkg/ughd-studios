@@ -1,0 +1,267 @@
+/* Careers page — Phantom-style careers layout on the dark editorial system.
+   Relies on about.css for the shared primitives (minipill, reveal,
+   about-footer, body.page scroll unlock). */
+
+.careers {
+  position: relative;
+  z-index: 1;
+  padding-top: 150px;
+}
+
+/* shared two-column rhythm: mono label on the left, content right */
+.careers-hero,
+.openroles,
+.jobdetail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 40px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 90px 36px 0;
+}
+.careers-hero__label,
+.openroles__label,
+.jobdetail__label,
+.valuerow__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--fg-dim);
+}
+.careers-hero__label .dot,
+.openroles__label .dot,
+.jobdetail__label .dot,
+.valuerow__label .dot {
+  font-size: 8px;
+  vertical-align: 2px;
+  margin-right: 6px;
+}
+
+/* hero */
+.careers-hero {
+  padding-top: 40px;
+}
+.careers-hero__title {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(28px, 3.6vw, 52px);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  max-width: 21em;
+}
+.careers-hero__cta {
+  display: inline-block;
+  margin-top: 34px;
+  text-decoration: none;
+}
+
+/* values */
+.values {
+  max-width: 1280px;
+  margin: 110px auto 0;
+  padding: 0 36px;
+}
+.valuerow {
+  display: grid;
+  grid-template-columns: 220px 1fr 1.3fr 200px;
+  gap: 40px;
+  align-items: center;
+  padding: 70px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.valuerow:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.valuerow__name {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(24px, 2.4vw, 34px);
+  letter-spacing: -0.01em;
+}
+.valuerow__copy {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  letter-spacing: 0.02em;
+  color: var(--fg-dim);
+}
+.valuerow__thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1.15;
+  object-fit: cover;
+  border-radius: 6px;
+  justify-self: end;
+  filter: saturate(0.9);
+}
+
+/* open roles */
+.openroles {
+  padding-top: 130px;
+}
+.openroles__heading {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(30px, 3.4vw, 46px);
+  letter-spacing: -0.015em;
+  margin-bottom: 44px;
+}
+.rolegrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  max-width: 1000px;
+}
+.rolecard {
+  display: flex;
+  flex-direction: column;
+  min-height: 250px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.6);
+  color: var(--fg);
+  text-decoration: none;
+  transition: background 0.25s, border-color 0.25s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rolecard:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.02);
+}
+.rolecard:active {
+  transform: scale(0.98);
+  transition-duration: 0.08s;
+}
+.rolecard__cat {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--fg-dim);
+  margin-bottom: 18px;
+}
+.rolecard__title {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+}
+.rolecard__meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--fg-dim);
+  margin-top: 10px;
+}
+.rolecard__arrow {
+  margin-top: auto;
+  font-size: 22px;
+  line-height: 1;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rolecard:hover .rolecard__arrow {
+  transform: translateX(6px);
+}
+.openroles__wildcard {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(16px, 1.6vw, 20px);
+  line-height: 1.45;
+  max-width: 620px;
+  margin: 70px 0 30px;
+}
+
+/* job detail */
+.jobdetail {
+  padding-top: 150px;
+  scroll-margin-top: 110px;
+}
+.jobdetail__title {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(34px, 4.4vw, 64px);
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.jobdetail__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 56px;
+}
+.jobdetail__section {
+  max-width: 680px;
+  padding: 34px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.jobdetail__section h3 {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+.jobdetail__section p,
+.jobdetail__section li {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  color: var(--fg-dim);
+}
+.jobdetail__section ul {
+  list-style: none;
+}
+.jobdetail__section li {
+  padding-left: 18px;
+  position: relative;
+  margin-bottom: 8px;
+}
+.jobdetail__section li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: #5f5f5f;
+}
+.jobdetail__section a {
+  color: #fff;
+}
+.jobdetail__apply {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: #fff !important;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 12px 22px;
+  display: inline-block;
+  margin-top: 22px;
+  transition: background 0.2s, color 0.2s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.jobdetail__apply:hover {
+  background: #fff;
+  color: #000 !important;
+  transform: scale(1.05);
+}
+.jobdetail__apply:active {
+  transform: scale(0.94);
+  transition-duration: 0.08s;
+}
+
+@media (max-width: 900px) {
+  .careers-hero,
+  .openroles,
+  .jobdetail {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .valuerow {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 44px 0;
+  }
+  .valuerow__thumb {
+    justify-self: start;
+    max-width: 240px;
+  }
+}

@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars for local development (never commit .dev.vars)
+# Set these same values in Cloudflare Pages → Settings → Environment Variables for production
+
+CLICKUP_API_TOKEN=pk_your_token_here
+CLICKUP_LIST_ID=your_list_id_here
+RESEND_API_KEY=re_your_key_here
