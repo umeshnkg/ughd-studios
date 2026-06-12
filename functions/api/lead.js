@@ -28,7 +28,10 @@ export async function onRequestPost({ request, env }) {
     message || '—',
   ].join('\n');
 
-  const [clickupRes, resendRes] = await Promise.allSettled([
+  // ClickUp is the primary capture. Email via Resend is optional —
+  // only attempted when a key is configured, so an unconfigured Resend
+  // never adds latency to the submission.
+  const tasks = [
     fetch(`https://api.clickup.com/api/v2/list/${env.CLICKUP_LIST_ID}/task`, {
       method: 'POST',
       headers: {
@@ -42,27 +45,29 @@ export async function onRequestPost({ request, env }) {
         priority: budget === '$20K+' ? 2 : 3,
       }),
     }),
+  ];
 
-    fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'UGHD Studios <noreply@ughdstudios.com>',
-        to: ['contact@ughdstudios.com'],
-        subject: `New Inquiry — ${cleanName} | ${budget || 'Budget TBD'} | ${timeline || 'Timeline TBD'}`,
-        html: buildEmailHtml({ name: cleanName, email: cleanEmail, role, phone, budget, timeline, sources, message }),
-      }),
-    }),
-  ]);
-
-  if (clickupRes.status === 'rejected') {
-    console.error('ClickUp error:', clickupRes.reason);
+  if (env.RESEND_API_KEY) {
+    tasks.push(
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'UGHD Studios <noreply@ughdstudios.com>',
+          to: [env.LEAD_NOTIFY_EMAIL || 'contact@ughdstudios.com'],
+          subject: `New Inquiry — ${cleanName} | ${budget || 'Budget TBD'} | ${timeline || 'Timeline TBD'}`,
+          html: buildEmailHtml({ name: cleanName, email: cleanEmail, role, phone, budget, timeline, sources, message }),
+        }),
+      })
+    );
   }
-  if (resendRes.status === 'rejected') {
-    console.error('Resend error:', resendRes.reason);
+
+  const results = await Promise.allSettled(tasks);
+  for (const r of results) {
+    if (r.status === 'rejected') console.error('Lead delivery error:', r.reason);
   }
 
   return json({ ok: true });
