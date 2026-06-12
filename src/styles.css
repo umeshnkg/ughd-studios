@@ -29,6 +29,9 @@ body {
   inset: 0;
   display: block;
   cursor: grab;
+  /* without this, mobile browsers claim touch gestures for themselves
+     and the pointermove drag gets cancelled mid-swipe */
+  touch-action: none;
 }
 #scene.is-dragging {
   cursor: grabbing;
@@ -108,6 +111,7 @@ body {
   align-items: center;
   gap: 10px;
   margin-top: 8px;
+  white-space: nowrap;
 }
 .sound__bars {
   display: inline-flex;
@@ -173,6 +177,7 @@ body {
   border: 0;
   cursor: pointer;
   text-decoration: none;
+  white-space: nowrap;
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.25s;
 }
 .btn:hover {
@@ -392,6 +397,22 @@ body {
     transform: translate3d(5%, 4%, 0);
   }
 }
+@keyframes filter-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.filterpanel.is-open > button,
+.filterpanel.is-open > .filter-group > button {
+  opacity: 0;
+  animation: filter-item-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
 .filterpanel button {
   font-family: var(--mono);
   font-size: 11px;
@@ -466,6 +487,11 @@ body {
   .filterpanel.is-open {
     animation: none;
   }
+  .filterpanel.is-open > button,
+  .filterpanel.is-open > .filter-group > button {
+    animation: none;
+    opacity: 1;
+  }
   .mainnav__pill,
   .filter-subpanel {
     transition: none;
@@ -525,12 +551,15 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 40px;
   font-family: var(--mono);
   font-size: 12px;
 }
 .detail__tags {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .detail__tags span {
@@ -814,15 +843,55 @@ body.page-open #scene {
   font-size: 16px;
 }
 
+/* mid widths: the masthead copy + two clocks collide with the
+   Let's Talk button well before 900px — drop the clocks first */
+@media (max-width: 1240px) {
+  .masthead__locales {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
   .masthead {
     display: none;
   }
   .chrome {
-    padding: 18px 16px;
+    padding: 16px 14px;
+  }
+  .chrome--bottom {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
   .viewtoggle {
     display: none;
+  }
+  .logo__icon {
+    height: 30px;
+  }
+  .btn {
+    font-size: 15px;
+    padding: 13px 22px;
+  }
+  .mainnav {
+    padding: 5px;
+  }
+  .mainnav__pill {
+    top: 5px;
+  }
+  .mainnav__item {
+    font-size: 15px;
+    padding: 11px 18px;
+  }
+  .filterpanel {
+    max-width: calc(100vw - 28px);
+  }
+  .detail__inner {
+    padding: 24px 20px 64px;
+  }
+  .detail__bar {
+    margin-bottom: 6vh;
+  }
+  .detail__meta {
+    margin-bottom: 28px;
   }
   .lead__card {
     padding: 32px 22px 28px;
@@ -831,4 +900,47 @@ body.page-open #scene {
     grid-template-columns: 1fr;
     gap: 0;
   }
+}
+
+/* phones */
+@media (max-width: 480px) {
+  .chrome {
+    padding: 14px 12px;
+  }
+  .chrome--bottom {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .logo__icon {
+    height: 22px;
+  }
+  .sound {
+    font-size: 10px;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .btn {
+    font-size: 13.5px;
+    padding: 12px 18px;
+  }
+  .mainnav__item {
+    font-size: 13.5px;
+    padding: 10px 14px;
+  }
+  .detail__title {
+    font-size: clamp(30px, 9.5vw, 44px);
+  }
+  .detail__bar {
+    font-size: 11px;
+  }
+  .lead__title {
+    font-size: 26px;
+  }
+  .loader__logo {
+    font-size: 22px;
+  }
+}
+
+.about-footer__base a {
+  color: inherit;
+  text-decoration: none;
 }

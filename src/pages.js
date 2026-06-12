@@ -57,12 +57,22 @@ function initReveals(container) {
   });
 }
 
+// Cloudflare Pages redirects /about.html -> /about (pretty URLs), so
+// production history entries use the extensionless form to avoid a 308
+// on reload; the Vite dev server only serves the .html paths
+function cleanUrl(page) {
+  return import.meta.env.PROD ? PAGES[page].replace(/\.html$/, '') : PAGES[page];
+}
+
 async function loadPage(page) {
   if (pageCache[page]) return pageCache[page];
   const html = await (await fetch(PAGES[page])).text();
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  pageCache[page] = doc.querySelector('main');
-  return pageCache[page];
+  const main = new DOMParser()
+    .parseFromString(html, 'text/html')
+    .querySelector('main');
+  if (!main) throw new Error(`no <main> in ${PAGES[page]}`);
+  pageCache[page] = main;
+  return main;
 }
 
 // music wash: starts 2.6 viewport-heights before the bottom, only
@@ -90,11 +100,20 @@ async function openPage(page, push) {
   if (animating) return;
   if (open && currentPage === page) return;
   animating = true; // guard before await so rapid clicks can't race through
-  const main = await loadPage(page);
+  let main;
+  try {
+    main = await loadPage(page);
+  } catch {
+    // fetch/parse failed — fall back to a real navigation instead of
+    // leaving the nav stuck behind the animating guard
+    animating = false;
+    location.href = PAGES[page];
+    return;
+  }
   // swapping pages while the card is up replaces the entry so "Work"
   // (history.back) always returns straight to the gallery
-  if (push && open) history.replaceState({ page }, '', PAGES[page]);
-  else if (push) history.pushState({ page }, '', PAGES[page]);
+  if (push && open) history.replaceState({ page }, '', cleanUrl(page));
+  else if (push) history.pushState({ page }, '', cleanUrl(page));
   setActive(page);
   currentPage = page;
 
@@ -155,8 +174,9 @@ export function initPages() {
   });
 
   window.addEventListener('popstate', () => {
+    const path = location.pathname.replace(/\.html$/, '');
     const page = Object.keys(PAGES).find((p) =>
-      location.pathname.endsWith(PAGES[p])
+      path.endsWith(PAGES[p].replace(/\.html$/, ''))
     );
     if (page) openPage(page, false);
     else closePage();

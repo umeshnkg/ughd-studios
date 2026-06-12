@@ -17,12 +17,18 @@ let nodes = null; // { duck, hp, dry, wet, music }
 let washTarget = 0;
 let wash = 0;
 
+// The work gallery (homepage) gets its own track; every other page
+// keeps the lounge music. Each page is a full load, so the track is
+// simply picked at boot.
+const isWorkPage = location.pathname === '/' || location.pathname.endsWith('/index.html');
+const TRACK = isWorkPage ? 'UGHD%20Website%20-%20Work%20Music' : 'UGHD%20Studios%20Lounge%20Music';
+
 const bgMusic = document.createElement('audio');
 bgMusic.loop = true;
 bgMusic.style.display = 'none';
 bgMusic.innerHTML = `
-  <source src="/UGHD%20Studios%20Lounge%20Music.webm" type="audio/webm">
-  <source src="/UGHD%20Studios%20Lounge%20Music.mp3" type="audio/mpeg">
+  <source src="/${TRACK}.webm" type="audio/webm">
+  <source src="/${TRACK}.mp3" type="audio/mpeg">
 `;
 document.body.appendChild(bgMusic);
 
@@ -224,6 +230,23 @@ export function initAudio() {
     toggle.classList.toggle('is-off', !bgMusicOn);
     if (bgMusicOn) tryPlay();
     else bgMusic.pause();
+  });
+
+  // navigating to another page kills the audio element mid-note — hold
+  // the navigation just long enough for a fast fade so the track doesn't
+  // cut off abruptly (each page restarts its own music on load)
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    if (a.target === '_blank' || a.hasAttribute('download')) return;
+    const url = new URL(a.getAttribute('href'), location.href);
+    if (url.origin !== location.origin) return;
+    if (url.pathname === location.pathname) return; // same-page / hash link
+    if (!bgMusicOn || bgMusic.paused) return;
+    e.preventDefault();
+    fadeOutMusic(0.2);
+    setTimeout(() => { location.href = url.href; }, 230);
   });
 
   // click sound on every button / link press, capture phase so it fires

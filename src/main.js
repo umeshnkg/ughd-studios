@@ -26,6 +26,22 @@ const CAM_Z = 11.0;
 const FOV = 50;
 const ZOOM_Z = 4.4; // dolly distance when a card opens
 
+// The FOV is vertical, so a fixed CAM_Z keeps a constant number of ROWS
+// in view — on narrow/portrait screens that leaves barely one giant
+// column visible. Push the camera back until a minimum grid WIDTH fits.
+const MIN_VISIBLE_W = STEP_X * 3.4;
+
+function restZ() {
+  const aspect = window.innerWidth / window.innerHeight;
+  const halfTan = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  return Math.max(CAM_Z, MIN_VISIBLE_W / (2 * halfTan * aspect));
+}
+
+// keep the card's apparent size during the open-zoom consistent too
+function zoomZ() {
+  return ZOOM_Z * (restZ() / CAM_Z);
+}
+
 const LENS_K = 0.11; // barrel distortion strength
 const LENS_BLUR = 0.014; // edge blur radius (uv units)
 const LENS_DIM = 0.32; // edge darkening
@@ -43,7 +59,7 @@ const TEX_H = 920;
 
 // grid hairline — a card is ~400 screen px wide, so 4 texture px ≈ 1.5 px
 const GRID_LINE = 4;
-const GRID_LINE_COLOR = 'rgba(255, 255, 255, 0.16)';
+const GRID_LINE_COLOR = 'rgba(255, 255, 255, 0.32)';
 
 // ============================================================
 // Scene setup
@@ -65,7 +81,7 @@ const camera = new THREE.PerspectiveCamera(
 );
 // view = camera rest position; parallax is added on top each frame so
 // gsap can tween view during the open/close zoom without fighting it
-const view = { x: 0, y: 0, z: CAM_Z };
+const view = { x: 0, y: 0, z: restZ() };
 camera.position.set(view.x, view.y, view.z);
 
 // ============================================================
@@ -645,7 +661,7 @@ function openDetail(card) {
   // then slide the page in
   const tile = card.mesh.position;
   const tl = gsap.timeline();
-  tl.to(view, { x: tile.x, y: tile.y, z: ZOOM_Z, duration: 0.85, ease: 'power3.inOut' }, 0)
+  tl.to(view, { x: tile.x, y: tile.y, z: zoomZ(), duration: 0.85, ease: 'power3.inOut' }, 0)
     .to(lens.k, { value: 0, duration: 0.85, ease: 'power3.inOut' }, 0)
     .to(lens.blur, { value: 0, duration: 0.85, ease: 'power2.out' }, 0)
     .to(detailEl, { y: 0, duration: 0.9, ease: 'power4.inOut' }, 0.18)
@@ -668,7 +684,7 @@ function closeDetail() {
     },
   });
   tl.to(detailEl, { y: '100%', duration: 0.8, ease: 'power4.inOut' }, 0)
-    .to(view, { x: 0, y: 0, z: CAM_Z, duration: 0.9, ease: 'power3.inOut' }, 0.1)
+    .to(view, { x: 0, y: 0, z: restZ(), duration: 0.9, ease: 'power3.inOut' }, 0.1)
     .to(lens.k, { value: LENS_K, duration: 0.9, ease: 'power3.inOut' }, 0.1)
     .to(lens.blur, { value: LENS_BLUR, duration: 0.9, ease: 'power2.in' }, 0.1);
 }
@@ -739,7 +755,18 @@ filterTags.forEach((item) => {
 });
 
 filterBtn.addEventListener('click', () => {
+  const isOpening = !filterPanel.classList.contains('is-open');
   filterPanel.classList.toggle('is-open');
+  if (isOpening) {
+    let i = 0;
+    for (const child of filterPanel.children) {
+      const btn = child.tagName === 'BUTTON' ? child : child.querySelector(':scope > button');
+      if (btn) {
+        btn.style.setProperty('--reveal-delay', `${50 + i * 45}ms`);
+        i++;
+      }
+    }
+  }
 });
 
 function applyFilter(tag, btn, parentTag = null) {
@@ -863,8 +890,8 @@ function onReady() {
     .set(loader, { display: 'none' })
     .fromTo(
       view,
-      { z: CAM_Z * 2.1 },
-      { z: CAM_Z, duration: 1.8, ease: 'power3.inOut' },
+      { z: restZ() * 2.1 },
+      { z: restZ(), duration: 1.8, ease: 'power3.inOut' },
       0.2
     )
     .fromTo(
@@ -939,6 +966,10 @@ window.addEventListener('resize', () => {
   sceneRT.dispose();
   sceneRT = makeRenderTarget();
   postMaterial.uniforms.tDiffuse.value = sceneRT.texture;
+  // re-fit the rest distance unless a tween owns view.z right now
+  if (!detailOpen && introDone && !gsap.isTweening(view)) {
+    view.z = restZ();
+  }
 });
 
 // wait for fonts so canvas labels render with the right typefaces
