@@ -22,12 +22,13 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
   const mats = [panel.material]; // tweened together for fade in/out
 
   // caption strip
+  const CAP_H = 210;
   const cv = document.createElement('canvas');
-  cv.width = 1024; cv.height = 180;
+  cv.width = 1024; cv.height = CAP_H;
   const cctx = cv.getContext('2d');
   const captionTex = new THREE.CanvasTexture(cv);
   const caption = new THREE.Mesh(
-    new THREE.PlaneGeometry(3, 3 * (180 / 1024)),
+    new THREE.PlaneGeometry(3, 3 * (CAP_H / 1024)),
     new THREE.MeshBasicMaterial({ map: captionTex, transparent: true })
   );
   group.add(caption);
@@ -44,6 +45,7 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
   document.body.appendChild(video);
   let videoTex = null;
   let playing = false;
+  let inspecting = false;
 
   const camPos = new THREE.Vector3();
   const camDir = new THREE.Vector3();
@@ -53,23 +55,28 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
     const h = w / aspect;
     panel.geometry.dispose();
     panel.geometry = new THREE.PlaneGeometry(w, h);
-    const ch = w * (180 / 1024);
+    const ch = w * (CAP_H / 1024);
     caption.position.y = -h / 2 - ch / 2 - 0.05;
   }
 
   function paintCaption(p) {
-    cctx.clearRect(0, 0, 1024, 180);
+    cctx.clearRect(0, 0, 1024, CAP_H);
     cctx.fillStyle = 'rgba(0,0,0,0.72)';
-    cctx.fillRect(0, 0, 1024, 180);
+    cctx.fillRect(0, 0, 1024, CAP_H);
     cctx.textBaseline = 'middle';
     cctx.textAlign = 'left';
     cctx.fillStyle = '#fff';
-    cctx.font = '600 60px "Space Grotesk", sans-serif';
-    cctx.fillText(p.title || '', 40, 68);
+    cctx.font = '600 58px "Space Grotesk", sans-serif';
+    cctx.fillText(p.title || '', 40, 56);
     cctx.fillStyle = 'rgba(255,255,255,0.6)';
-    cctx.font = '400 34px "Space Mono", monospace';
+    cctx.font = '400 32px "Space Mono", monospace';
     const sub = [p.client, p.year].filter(Boolean).join('  ·  ');
-    cctx.fillText(sub.toUpperCase(), 40, 132);
+    cctx.fillText(sub.toUpperCase(), 40, 112);
+    if (p.tags && p.tags.length) {
+      cctx.fillStyle = '#4cc9ff';
+      cctx.font = '400 26px "Space Mono", monospace';
+      cctx.fillText(p.tags.join('  ·  '), 40, 165);
+    }
     captionTex.needsUpdate = true;
   }
 
@@ -86,6 +93,11 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
   function open(mesh) {
     const p = mesh.userData.project;
     paintCaption(p);
+    // reset any prior inspect transform
+    inspecting = false;
+    panel.position.set(0, 0, 0);
+    panel.rotation.set(0, 0, 0);
+    panel.scale.setScalar(1);
 
     if (p.video) {
       layout(16 / 9);
@@ -141,5 +153,24 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
     open,
     dismiss,
     isOpen: () => group.visible,
+    panel, // exposed for grab-to-inspect
+    // slow Ken Burns drift on a still (no-video) focus so it isn't dead
+    update(t) {
+      if (!group.visible || playing || inspecting) return;
+      const k = 1.03 + 0.03 * Math.sin(t * 0.4);
+      panel.scale.setScalar(k);
+      panel.position.x = Math.sin(t * 0.22) * 0.05;
+      panel.position.y = Math.cos(t * 0.17) * 0.04;
+    },
+    // grab-to-inspect: index drives this from the grip while focused
+    setInspect(v) {
+      inspecting = v;
+      if (!v) { panel.position.set(0, 0, 0); panel.rotation.set(0, 0, 0); panel.scale.setScalar(1); }
+    },
+    inspectFrom(controller) {
+      if (!inspecting) return;
+      // tumble the panel to match the controller's orientation
+      panel.quaternion.copy(controller.quaternion);
+    },
   };
 }

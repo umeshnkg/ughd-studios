@@ -5,6 +5,9 @@ import { createGallery } from './gallery.js';
 import { createTeleport } from './teleport.js';
 import { createFocus } from './focus.js';
 import { createUI } from './ui.js';
+import { createCinema } from './cinema.js';
+import { createStations } from './stations.js';
+import { createSpatial } from './spatial.js';
 import { duckMusic, unduckMusic, startAmbient, stopAmbient,
          playTick, playClick, playWhoosh } from '../audio.js';
 
@@ -39,12 +42,17 @@ export function initVR(ctx) {
   let rig = null;
   let leftCtrl = null, rightCtrl = null;
   let env = null, gallery = null, teleport = null, focus = null, ui = null;
+  let cinema = null, stations = null, spatial = null;
+  let allPads = [];
   let blink = null;
   const controllers = [];
   const savedCamPos = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
   const tmpMatrix = new THREE.Matrix4();
+  const camPos = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
   let rightHover = null;
+  let inspecting = false;
 
   // ----- brand button in the header chrome -----
   function mountButton() {
@@ -69,8 +77,25 @@ export function initVR(ctx) {
   // ----- build the world once (after the session + rig exist) -----
   function buildWorld() {
     env = createEnvironment(vrRoot);
-    gallery = createGallery({ scene: vrRoot, projectArt, tileGeometry, makeCardMaterial });
+    // Ring layout (radians): cinema dead ahead (0); work walls offset 30°
+    // so they sit at 30/150/270; content fills 90/210/330.
+    const A = (deg) => (deg * Math.PI) / 180;
+    gallery = createGallery({ scene: vrRoot, projectArt, tileGeometry, makeCardMaterial, angleOffset: A(30) });
+    cinema = createCinema({ scene: vrRoot, baseAngle: A(0), duckMusic, unduckMusic });
+    stations = createStations({ scene: vrRoot, baseAngles: { about: A(90), stats: A(210), contact: A(330) } });
     focus = createFocus({ scene: vrRoot, camera, duckMusic, unduckMusic });
+
+    // every teleport pad in the room (spawn + work walls + cinema + content)
+    allPads = [...gallery.pads, cinema.pad, ...stations.pads];
+
+    // spatial drones at each station so the room has a sense of place
+    spatial = createSpatial({
+      camera, vrRoot,
+      positions: [
+        cinema.pad.position, ...gallery.pads.slice(1).map((p) => p.position),
+        ...stations.pads.map((p) => p.position),
+      ],
+    });
 
     // comfort blink: a black shell on the camera, faded in/out per jump
     const shell = new THREE.Mesh(
@@ -114,6 +139,13 @@ export function initVR(ctx) {
       });
       c.addEventListener('disconnected', () => { c.userData.inputSource = null; });
       c.addEventListener('selectstart', onSelect);
+      // grip = grab-to-inspect while a focus is open
+      c.addEventListener('squeezestart', () => {
+        if (focus && focus.isOpen()) { inspecting = true; focus.setInspect(true); }
+      });
+      c.addEventListener('squeezeend', () => {
+        if (inspecting) { inspecting = false; focus.setInspect(false); }
+      });
       rig.add(c);
       controllers.push(c);
     }
@@ -132,7 +164,7 @@ export function initVR(ctx) {
       teleport = createTeleport({
         leftController: leftCtrl,
         getLeftSource: () => leftCtrl.userData.inputSource,
-        rig, floorMesh: env.floor, pads: gallery.pads, blink, scene: vrRoot,
+        rig, floorMesh: env.floor, pads: allPads, blink, scene: vrRoot,
         onTeleport: () => playWhoosh(),
       });
     }
@@ -144,9 +176,10 @@ export function initVR(ctx) {
     tmpMatrix.identity().extractRotation(rightCtrl.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(rightCtrl.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMatrix);
-    const targets = [...gallery.panels, ...(ui ? ui.buttons : [])];
+    const targets = [...gallery.panels, cinema.screen, ...(ui ? ui.buttons : [])];
     const hit = raycaster.intersectObjects(targets, false)[0]?.object || null;
     if (ui && ui.buttons.includes(hit)) { ui.setHover(hit); gallery.clearHover(); rightHover = hit; }
+    else if (hit === cinema.screen) { gallery.clearHover(); ui && ui.setHover(null); rightHover = hit; }
     else if (gallery.panels.includes(hit)) {
       if (gallery.setHover(hit)) playTick(); // tick only when the target changes
       ui && ui.setHover(null); rightHover = hit;
@@ -163,8 +196,10 @@ export function initVR(ctx) {
       teleport && teleport.setVisible(true);
       return;
     }
+    spatial && spatial.resume(); // ensure spatial audio context is running (gesture)
     if (!rightHover) return;
     if (ui && ui.buttons.includes(rightHover)) { playClick(); ui.trigger(rightHover); return; }
+    if (rightHover === cinema.screen) { playClick(); cinema.toggle(); return; }
     // otherwise it's a work panel → open the focus view (whoosh = the swell)
     playWhoosh();
     focus.open(rightHover);
@@ -194,6 +229,7 @@ export function initVR(ctx) {
     vrRoot.visible = true;
     if (blink) blink.shell.visible = true;
     ui && ui.reset();
+    spatial && spatial.resume();
 
     // arrival: ambient track was started in the click gesture; now
     // materialize the panels in a wave
@@ -208,8 +244,13 @@ export function initVR(ctx) {
         gallery.update(t); // idle breathing continues even behind the focus view
         if (focus.isOpen()) {
           gallery.clearHover(); ui && ui.setHover(null);
+          focus.update(t); // Ken Burns drift on a still
+          if (inspecting && rightCtrl) focus.inspectFrom(rightCtrl);
           teleport && teleport.update(false);
         } else {
+          camera.getWorldPosition(camPos);
+          camera.getWorldDirection(camDir);
+          gallery.updateGaze(camPos, camDir); // panels wake as you look across
           updatePointer();
           teleport && teleport.update(true);
         }
@@ -231,6 +272,7 @@ export function initVR(ctx) {
     if (rig) rig.remove(camera); // hand the camera back to the desktop loop
     camera.position.copy(savedCamPos);
     stopAmbient(); // restore the saved sound preference for the flat site
+    spatial && spatial.suspend(); // stop the drones humming on the flat site
     if (ctx.button) ctx.button.textContent = 'Enter VR';
     onExit();
   }

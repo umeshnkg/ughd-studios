@@ -6,7 +6,14 @@ export const EYE_Y = 1.6;
 // room centre; its teleport pad sits PAD_DIST out along the same radial.
 export const WALL_DIST = 6;
 export const PAD_DIST = 3;
-export const PANEL_SCALE = 0.5; // shrink the desktop tile geometry (3.2×2.875)
+export const PANEL_SCALE = 0.4; // shrink the desktop tile geometry (3.2×2.875)
+
+// Vertical layout band: keep every row inside a comfortable, above-floor
+// window so nothing sinks into the ground (the old bug) or floats overhead.
+export const BAND_CENTER = 1.7; // preferred vertical centre of a wall (m)
+export const FLOOR_CLEAR = 0.12; // min gap between the lowest row edge and floor
+export const MAX_ROWS = 3; // cap rows; widen columns / arc instead
+export const ROW_TARGET = 6; // ~items per row before adding another row
 
 // Zones, in display order. Grouped by project `source`.
 export const ZONES = [

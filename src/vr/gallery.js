@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
 import { EYE_Y, WALL_DIST, PAD_DIST, PANEL_SCALE, ZONES,
-         ACCENT, HOVER_SCALE, HOVER_DUR, BOB_AMP, BOB_SPEED } from './constants.js';
+         ACCENT, HOVER_SCALE, HOVER_DUR, BOB_AMP, BOB_SPEED,
+         BAND_CENTER, FLOOR_CLEAR, MAX_ROWS, ROW_TARGET } from './constants.js';
 
 // ============================================================
 // The gallery hall: work split into zones (one curved wall each,
@@ -17,9 +18,9 @@ const TILE_H = 2.875;
 const PANEL_W = TILE_W * PANEL_SCALE;
 const PANEL_H = TILE_H * PANEL_SCALE;
 const H_GAP = 1.14;
-const V_GAP = 1.14;
+const V_GAP = 1.08;
 
-export function createGallery({ scene, projectArt, tileGeometry, makeCardMaterial }) {
+export function createGallery({ scene, projectArt, tileGeometry, makeCardMaterial, angleOffset = 0 }) {
   const group = new THREE.Group();
   const panels = [];
   const pads = [{ position: new THREE.Vector3(0, 0, 0), label: 'CENTRE' }];
@@ -46,19 +47,25 @@ export function createGallery({ scene, projectArt, tileGeometry, makeCardMateria
   ZONES.forEach((zone, zi) => {
     const items = byZone[zi];
     if (!items.length) return;
-    const baseAngle = (zi * 2 * Math.PI) / ZONES.length;
+    const baseAngle = angleOffset + (zi * 2 * Math.PI) / ZONES.length;
     const dir = new THREE.Vector3(Math.sin(baseAngle), 0, -Math.cos(baseAngle));
 
-    const cols = Math.min(7, Math.ceil(Math.sqrt(items.length * 1.6)));
-    const rows = Math.ceil(items.length / cols);
+    // prefer wide walls with few rows so nothing stacks too tall; the arc
+    // just curves further for big zones
+    const rows = Math.min(MAX_ROWS, Math.ceil(items.length / ROW_TARGET));
+    const cols = Math.ceil(items.length / rows);
     const hStep = (PANEL_W * H_GAP) / WALL_DIST;
     const vStep = PANEL_H * V_GAP;
+    // centre the stack in the comfortable band, but push it up if needed so
+    // the lowest row's bottom edge clears the floor
+    const stackHalf = ((rows - 1) / 2) * vStep;
+    const centerY = Math.max(BAND_CENTER, FLOOR_CLEAR + PANEL_H / 2 + stackHalf);
 
     items.forEach((art, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const a = baseAngle + (col - (cols - 1) / 2) * hStep;
-      const y = EYE_Y + ((rows - 1) / 2 - row) * vStep;
+      const y = centerY + ((rows - 1) / 2 - row) * vStep;
       const mat = makeCardMaterial(art.tex, { value: 1 });
       const mesh = new THREE.Mesh(tileGeometry, mat);
       mesh.position.set(Math.sin(a) * WALL_DIST, y, -Math.cos(a) * WALL_DIST);
@@ -72,7 +79,7 @@ export function createGallery({ scene, projectArt, tileGeometry, makeCardMateria
       panels.push(mesh);
     });
 
-    const topY = EYE_Y + ((rows - 1) / 2 + 1) * vStep;
+    const topY = centerY + ((rows - 1) / 2) * vStep + vStep * 0.7;
     const sign = makeSign(zone.label);
     sign.position.set(Math.sin(baseAngle) * WALL_DIST, topY, -Math.cos(baseAngle) * WALL_DIST);
     sign.lookAt(0, topY, 0);
@@ -124,6 +131,21 @@ export function createGallery({ scene, projectArt, tileGeometry, makeCardMateria
     update(t) {
       for (const p of panels) {
         p.position.y = p.userData.basePos.y + Math.sin(t * BOB_SPEED + p.userData.phase) * BOB_AMP;
+      }
+    },
+
+    // panels you look at "wake" (brighten); the rest sit a touch dimmer, so
+    // the wall comes alive as your gaze sweeps across it. Uses material
+    // colour (multiplies the texture) — independent of hover/dim/scale.
+    updateGaze(camPos, camDir) {
+      for (const p of panels) {
+        const dx = p.position.x - camPos.x, dy = p.position.y - camPos.y, dz = p.position.z - camPos.z;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        const d = (dx * camDir.x + dy * camDir.y + dz * camDir.z) / len;
+        const wake = Math.max(0, Math.min(1, (d - 0.9) / 0.09)); // narrow cone
+        const g = 0.8 + 0.2 * wake;
+        const c = p.material.color;
+        c.r += (g - c.r) * 0.12; c.g += (g - c.g) * 0.12; c.b += (g - c.b) * 0.12;
       }
     },
 
