@@ -122,8 +122,8 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
     camera.getWorldPosition(camPos);
     camera.getWorldDirection(camDir);
     camDir.y = 0; camDir.normalize();
-    const dest = camPos.clone().add(camDir.clone().multiplyScalar(2.8)).setY(EYE_Y);
-    const start = camPos.clone().add(camDir.clone().multiplyScalar(3.5)).setY(EYE_Y);
+    const dest = camPos.clone().add(camDir.clone().multiplyScalar(3.3)).setY(EYE_Y);
+    const start = camPos.clone().add(camDir.clone().multiplyScalar(4.1)).setY(EYE_Y);
     group.position.copy(start);
     group.lookAt(camPos.x, EYE_Y, camPos.z);
 

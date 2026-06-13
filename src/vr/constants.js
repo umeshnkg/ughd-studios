@@ -21,9 +21,9 @@ export const WARP_OUT_DUR = 1.2;
 export const STAGE_RADIUS = 1.7; // the platform you stand on
 
 // ---- Gaze-following filter companion ----
-export const COMPANION_DIST = 1.25; // metres in front of the eyes
-export const COMPANION_DOWN = 0.42; // how far below the view centre it rides
-export const COMPANION_SIDE = 0.32; // and to the right
+export const COMPANION_DIST = 1.9; // metres in front of the eyes (kept clear of the view)
+export const COMPANION_DOWN = 0.62; // how far below the view centre it rides
+export const COMPANION_SIDE = 0.55; // and to the right
 export const COMPANION_LAG = 0.055; // lerp factor — low = more trailing "drag"
 
 // ---- Feel / accent (one place to tune the whole mood) ----

@@ -9,7 +9,7 @@ import { EYE_Y, FOCUS_DUR, ACCENT } from './constants.js';
 // sphere's rotation while open (via the onOpen/onClose hooks).
 // ============================================================
 
-const DIST = 2.7;
+const DIST = 3.5; // far enough that text panels read crisp, not blurry-close
 
 export function createModal({ scene, camera }) {
   // dim shell that rides with the head (radius < work sphere so the
