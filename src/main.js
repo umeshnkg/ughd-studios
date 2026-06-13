@@ -5,7 +5,7 @@ import { initAudio, playTick, duckMusic, unduckMusic } from './audio.js';
 import { initLeadForm } from './leadform.js';
 import { initPages, isPageOpen } from './pages.js';
 import { initNavPill } from './navpill.js';
-import { initVR } from './vr.js';
+import { initVR } from './vr/index.js';
 
 // ============================================================
 // Constants
