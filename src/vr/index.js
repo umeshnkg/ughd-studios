@@ -1,25 +1,24 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
 import { createEnvironment } from './environment.js';
-import { createGallery } from './gallery.js';
-import { createTeleport } from './teleport.js';
+import { createSphere } from './sphere.js';
 import { createFocus } from './focus.js';
-import { createUI } from './ui.js';
-import { createCinema } from './cinema.js';
-import { createStations } from './stations.js';
-import { createSpatial } from './spatial.js';
+import { createModal } from './modal.js';
+import { createTheater } from './theater.js';
+import { createOrbs } from './orbs.js';
+import { createFilter } from './filter.js';
+import { buildAbout, buildContact } from './panels.js';
 import { duckMusic, unduckMusic, startAmbient, stopAmbient,
          playTick, playClick, playWhoosh } from '../audio.js';
 
 // ============================================================
-// WebXR (Meta Quest) experience — orchestrator.
+// WebXR (Meta Quest) experience — orchestrator (v3).
 //
-// A progressive enhancement: nothing here runs unless an immersive-vr
-// device is present. Entering hides the flat fisheye site and builds a
-// branded "gallery hall" — work split into zones, teleport locomotion,
-// video-capable focus view, in-world wrist menu. The desktop render
-// path (the fisheye post pass in main.js) is completely untouched; it
-// just pauses while the headset session owns the loop.
+// Floating stage in a starfield; a full sphere of work tiles slowly
+// auto-rotates around you. Control orbs (Demo / About / Contact / Exit)
+// open modals; a gaze-following companion filters the sphere. The
+// desktop fisheye site is untouched — it just pauses while the headset
+// session owns the loop.
 // ============================================================
 
 export function initVR(ctx) {
@@ -32,27 +31,22 @@ export function initVR(ctx) {
     .then((ok) => { if (ok) mountButton(); })
     .catch(() => {});
 
-  // everything VR lives under one root we can hide on exit, so the
-  // desktop render of `scene` never shows VR objects
   const vrRoot = new THREE.Group();
   vrRoot.visible = false;
   scene.add(vrRoot);
 
   let built = false;
   let rig = null;
-  let leftCtrl = null, rightCtrl = null;
-  let env = null, gallery = null, teleport = null, focus = null, ui = null;
-  let cinema = null, stations = null, spatial = null;
-  let allPads = [];
-  let blink = null;
+  let rightCtrl = null;
+  let env = null, sphere = null, focus = null, modal = null, theater = null,
+      orbs = null, filter = null;
   const controllers = [];
   const savedCamPos = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
   const tmpMatrix = new THREE.Matrix4();
-  const camPos = new THREE.Vector3();
-  const camDir = new THREE.Vector3();
   let rightHover = null;
   let inspecting = false;
+  let gripHeld = false;
 
   // ----- brand button in the header chrome -----
   function mountButton() {
@@ -63,9 +57,7 @@ export function initVR(ctx) {
     btn.textContent = 'Enter VR';
     btn.addEventListener('click', () => {
       if (renderer.xr.isPresenting) { renderer.xr.getSession()?.end(); return; }
-      // start audio inside the click gesture so it isn't blocked after the
-      // async setSession; undo it if the session never opens
-      startAmbient();
+      startAmbient(); // inside the click gesture so audio isn't blocked
       navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
       }).then(onSessionStarted).catch((e) => { console.warn('VR start failed', e); stopAmbient(); });
@@ -74,55 +66,30 @@ export function initVR(ctx) {
     ctx.button = btn;
   }
 
-  // ----- build the world once (after the session + rig exist) -----
+  // ----- build the world once -----
   function buildWorld() {
     env = createEnvironment(vrRoot);
-    // Ring layout (radians): cinema dead ahead (0); work walls offset 30°
-    // so they sit at 30/150/270; content fills 90/210/330.
-    const A = (deg) => (deg * Math.PI) / 180;
-    gallery = createGallery({ scene: vrRoot, projectArt, tileGeometry, makeCardMaterial, angleOffset: A(30) });
-    cinema = createCinema({ scene: vrRoot, baseAngle: A(0), duckMusic, unduckMusic });
-    stations = createStations({ scene: vrRoot, baseAngles: { about: A(90), stats: A(210), contact: A(330) } });
+    sphere = createSphere({ scene: vrRoot, projectArt, tileGeometry, makeCardMaterial });
     focus = createFocus({ scene: vrRoot, camera, duckMusic, unduckMusic });
-
-    // every teleport pad in the room (spawn + work walls + cinema + content)
-    allPads = [...gallery.pads, cinema.pad, ...stations.pads];
-
-    // spatial drones at each station so the room has a sense of place
-    spatial = createSpatial({
-      camera, vrRoot,
-      positions: [
-        cinema.pad.position, ...gallery.pads.slice(1).map((p) => p.position),
-        ...stations.pads.map((p) => p.position),
-      ],
+    modal = createModal({ scene: vrRoot, camera });
+    theater = createTheater({ duckMusic, unduckMusic });
+    orbs = createOrbs({
+      scene: vrRoot,
+      actions: {
+        demo: () => { modal.open(theater.group, { w: theater.w, h: theater.h, onClose: () => theater.stop() }); theater.play(); },
+        about: () => { const a = buildAbout(); modal.open(a.group, { w: a.w, h: a.h }); },
+        contact: () => { const c = buildContact(); modal.open(c.group, { w: c.w, h: c.h }); },
+        exit: () => renderer.xr.getSession()?.end(),
+      },
     });
+    filter = createFilter({ scene: vrRoot, camera, sphere });
 
-    // comfort blink: a black shell on the camera, faded in/out per jump
-    const shell = new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide,
-        transparent: true, opacity: 0, depthTest: false })
-    );
-    shell.renderOrder = 999;
-    camera.add(shell);
-    blink = (cb) => {
-      gsap.timeline()
-        .to(shell.material, { opacity: 1, duration: 0.12, onComplete: cb })
-        .to(shell.material, { opacity: 0, duration: 0.2 });
-    };
-    blink.shell = shell;
-
-    // gsap's ticker runs on window.requestAnimationFrame, which the browser
-    // SUSPENDS during an immersive WebXR session — so tweens freeze. We drive
-    // gsap manually from the XR frame loop instead (see setAnimationLoop).
-    // lagSmoothing(0) stops it from swallowing the large time delta when the
-    // page-rAF clock and the XR clock diverge.
+    // gsap's ticker is frozen during XR (rAF suspended); drive it from the
+    // XR loop via gsap.updateRoot(t). lagSmoothing(0) avoids huge deltas.
     gsap.ticker.lagSmoothing(0);
-
     built = true;
   }
 
-  // controllers report handedness only once connected
   function setupControllers() {
     for (let i = 0; i < 2; i++) {
       const c = renderer.xr.getController(i);
@@ -135,76 +102,54 @@ export function initVR(ctx) {
       c.addEventListener('connected', (e) => {
         c.userData.handedness = e.data.handedness;
         c.userData.inputSource = e.data;
-        resolveRoles();
+        rightCtrl = controllers.find((x) => x.userData.handedness === 'right') || controllers[1] || c;
       });
-      c.addEventListener('disconnected', () => { c.userData.inputSource = null; });
       c.addEventListener('selectstart', onSelect);
-      // grip = grab-to-inspect while a focus is open
       c.addEventListener('squeezestart', () => {
+        gripHeld = true;
         if (focus && focus.isOpen()) { inspecting = true; focus.setInspect(true); }
       });
       c.addEventListener('squeezeend', () => {
+        gripHeld = false;
         if (inspecting) { inspecting = false; focus.setInspect(false); }
       });
       rig.add(c);
       controllers.push(c);
     }
+    rightCtrl = controllers[1] || controllers[0];
   }
 
-  // assign left/right once known; init teleport + wrist UI on first resolve
-  function resolveRoles() {
-    leftCtrl = controllers.find((c) => c.userData.handedness === 'left') || controllers[0];
-    rightCtrl = controllers.find((c) => c.userData.handedness === 'right') || controllers[1];
-    if (!ui && leftCtrl) {
-      ui = createUI({
-        scene: vrRoot, leftController: leftCtrl,
-        onExit: () => renderer.xr.getSession()?.end(),
-        onRecenter: () => blink(() => { rig.position.set(0, 0, 0); rig.rotation.set(0, 0, 0); }),
-      });
-      teleport = createTeleport({
-        leftController: leftCtrl,
-        getLeftSource: () => leftCtrl.userData.inputSource,
-        rig, floorMesh: env.floor, pads: allPads, blink, scene: vrRoot,
-        onTeleport: () => playWhoosh(),
-      });
-    }
-  }
-
-  // ----- pointer (right controller) → panels + wrist buttons -----
+  // ----- pointer (right controller) -----
   function updatePointer() {
     if (!rightCtrl) return;
     tmpMatrix.identity().extractRotation(rightCtrl.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(rightCtrl.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMatrix);
-    const targets = [...gallery.panels, cinema.screen, ...(ui ? ui.buttons : [])];
+
+    let targets;
+    if (modal.isOpen()) targets = [modal.closeButton];
+    else targets = [...sphere.tiles, ...orbs.meshes, filter.companion, ...filter.pillTargets()];
+
     const hit = raycaster.intersectObjects(targets, false)[0]?.object || null;
-    if (ui && ui.buttons.includes(hit)) { ui.setHover(hit); gallery.clearHover(); rightHover = hit; }
-    else if (hit === cinema.screen) { gallery.clearHover(); ui && ui.setHover(null); rightHover = hit; }
-    else if (gallery.panels.includes(hit)) {
-      if (gallery.setHover(hit)) playTick(); // tick only when the target changes
-      ui && ui.setHover(null); rightHover = hit;
-    }
-    else { gallery.clearHover(); ui && ui.setHover(null); rightHover = null; }
+    rightHover = hit;
+
+    // route hover highlights
+    if (hit && sphere.tiles.includes(hit)) { if (sphere.setHover(hit)) playTick(); orbs.setHover(null); }
+    else { sphere.clearHover(); orbs.setHover(hit && hit.userData.orb ? hit : null); }
   }
 
   function onSelect() {
     if (!built) return;
-    if (focus.isOpen()) {
-      playWhoosh();
-      focus.dismiss();
-      gallery.dim(false);
-      teleport && teleport.setVisible(true);
+    if (modal.isOpen()) {
+      if (rightHover === modal.closeButton) { playClick(); modal.close(); }
       return;
     }
-    spatial && spatial.resume(); // ensure spatial audio context is running (gesture)
+    if (focus.isOpen()) { playWhoosh(); focus.dismiss(); return; }
     if (!rightHover) return;
-    if (ui && ui.buttons.includes(rightHover)) { playClick(); ui.trigger(rightHover); return; }
-    if (rightHover === cinema.screen) { playClick(); cinema.toggle(); return; }
-    // otherwise it's a work panel → open the focus view (whoosh = the swell)
-    playWhoosh();
-    focus.open(rightHover);
-    gallery.dim(true);
-    teleport && teleport.setVisible(false);
+    if (rightHover.userData.orb) { playClick(); rightHover.userData.action?.(); return; }
+    if (rightHover.userData.companion) { playClick(); filter.toggle(); return; }
+    if (rightHover.userData.pill) { playClick(); filter.selectPill(rightHover); return; }
+    if (sphere.tiles.includes(rightHover)) { playWhoosh(); focus.open(rightHover); }
   }
 
   // ----- session lifecycle -----
@@ -212,7 +157,7 @@ export function initVR(ctx) {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local-floor');
     await renderer.xr.setSession(session);
-    renderer.xr.setFoveation?.(1); // ease the mobile GPU at the periphery
+    renderer.xr.setFoveation?.(1);
 
     if (!rig) {
       rig = new THREE.Group();
@@ -227,34 +172,25 @@ export function initVR(ctx) {
 
     onEnter();
     vrRoot.visible = true;
-    if (blink) blink.shell.visible = true;
-    ui && ui.reset();
-    spatial && spatial.resume();
-
-    // arrival: ambient track was started in the click gesture; now
-    // materialize the panels in a wave
-    gallery.group.visible = true;
-    gallery.playIntro();
+    sphere.playIntro();
 
     renderer.setAnimationLoop(() => {
       if (built) {
         const t = performance.now() / 1000;
-        gsap.updateRoot(t); // advance gsap on the XR clock (rAF is suspended)
+        gsap.updateRoot(t); // advance gsap on the XR clock
         env.update();
-        gallery.update(t); // idle breathing continues even behind the focus view
+        orbs.update(t);
+        filter.update();
+        // pause the spin whenever something is being viewed or grabbed
+        sphere.setPaused(modal.isOpen() || focus.isOpen() || gripHeld);
+        sphere.update(t);
+        filter.companion.visible = !modal.isOpen() && !focus.isOpen();
         if (focus.isOpen()) {
-          gallery.clearHover(); ui && ui.setHover(null);
-          focus.update(t); // Ken Burns drift on a still
+          focus.update(t);
           if (inspecting && rightCtrl) focus.inspectFrom(rightCtrl);
-          teleport && teleport.update(false);
         } else {
-          camera.getWorldPosition(camPos);
-          camera.getWorldDirection(camDir);
-          gallery.updateGaze(camPos, camDir); // panels wake as you look across
           updatePointer();
-          teleport && teleport.update(true);
         }
-        ui && ui.update();
       }
       renderer.render(scene, camera);
     });
@@ -266,13 +202,13 @@ export function initVR(ctx) {
   function onSessionEnded() {
     renderer.setAnimationLoop(null);
     renderer.xr.enabled = false;
+    if (theater) theater.stop();
+    if (modal && modal.isOpen()) modal.close();
     if (focus) focus.dismiss();
     vrRoot.visible = false;
-    if (blink) blink.shell.visible = false;
-    if (rig) rig.remove(camera); // hand the camera back to the desktop loop
+    if (rig) rig.remove(camera);
     camera.position.copy(savedCamPos);
-    stopAmbient(); // restore the saved sound preference for the flat site
-    spatial && spatial.suspend(); // stop the drones humming on the flat site
+    stopAmbient();
     if (ctx.button) ctx.button.textContent = 'Enter VR';
     onExit();
   }

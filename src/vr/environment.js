@@ -1,146 +1,121 @@
 import * as THREE from 'three';
-import { ACCENT } from './constants.js';
+import { ACCENT, STAGE_RADIUS } from './constants.js';
 
 // ============================================================
-// Branded VR environment — the "set" the gallery hall sits in.
-//   • dark floor with a homepage-style grid + radial fade
-//   • a faint horizon glow ring so the void reads as a room
-//   • slow drifting dust particles for depth
-//   • a floating UGHD logo over the spawn
-// All faked with textures/additive blending — no real-time lights or
-// shadows, to stay cheap on the Quest GPU.
+// Environment: a circular stage platform floating in a starfield void.
+// You stand on the stage; the sphere of work rotates around you. All
+// faked with unlit materials / points — no real-time lights.
 // ============================================================
 
-const FLOOR_RADIUS = 12;
 const LOGO_URL = '/UGHD-Studios-logo-white.webp';
 
 export function createEnvironment(scene) {
   const group = new THREE.Group();
 
-  // ----- floor: grid texture on a disc, dark with a soft centre glow -----
-  const floorTex = makeGridTexture();
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(FLOOR_RADIUS, 64),
-    new THREE.MeshBasicMaterial({ map: floorTex, transparent: true })
+  // ----- the stage you stand on -----
+  const stage = new THREE.Mesh(
+    new THREE.CircleGeometry(STAGE_RADIUS, 64),
+    new THREE.MeshBasicMaterial({ map: makeStageTexture(), transparent: true })
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0.001;
-  floor.name = 'vr-floor';
-  group.add(floor);
+  stage.rotation.x = -Math.PI / 2;
+  stage.position.y = 0.01;
+  group.add(stage);
 
-  // ----- horizon glow: a thin additive ring at floor level -----
-  const glow = new THREE.Mesh(
-    new THREE.RingGeometry(FLOOR_RADIUS - 2.4, FLOOR_RADIUS, 64),
-    new THREE.MeshBasicMaterial({
-      map: makeRadialGlowTexture(),
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
+  // glowing rim ring around the stage edge
+  const rim = new THREE.Mesh(
+    new THREE.RingGeometry(STAGE_RADIUS - 0.05, STAGE_RADIUS + 0.06, 64),
+    new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false })
   );
-  glow.rotation.x = -Math.PI / 2;
-  glow.position.y = 0.02;
-  group.add(glow);
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = 0.02;
+  group.add(rim);
 
-  // ----- dust particles -----
-  const PARTICLES = 400;
-  const positions = new Float32Array(PARTICLES * 3);
-  for (let i = 0; i < PARTICLES; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * FLOOR_RADIUS * 2;
-    positions[i * 3 + 1] = Math.random() * 4.5;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * FLOOR_RADIUS * 2;
+  // ----- starfield void -----
+  const STARS = 1200;
+  const sp = new Float32Array(STARS * 3);
+  for (let i = 0; i < STARS; i++) {
+    // shell of stars well outside the work sphere
+    const r = 18 + Math.random() * 30;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    sp[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    sp[i * 3 + 1] = r * Math.cos(ph);
+    sp[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0xffffff, size: 0.08, transparent: true, opacity: 0.8, depthWrite: false,
+  }));
+  group.add(stars);
+
+  // ----- faint drifting dust near the stage for depth -----
+  const DUST = 300;
+  const dp = new Float32Array(DUST * 3);
+  for (let i = 0; i < DUST; i++) {
+    dp[i * 3] = (Math.random() - 0.5) * 12;
+    dp[i * 3 + 1] = Math.random() * 5;
+    dp[i * 3 + 2] = (Math.random() - 0.5) * 12;
   }
   const dustGeo = new THREE.BufferGeometry();
-  dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const dust = new THREE.Points(
-    dustGeo,
-    new THREE.PointsMaterial({
-      color: 0xcfeeff, // faint cyan tint to match the accent
-      size: 0.02,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-    })
-  );
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+    color: 0xcfeeff, size: 0.02, transparent: true, opacity: 0.3, depthWrite: false,
+  }));
   group.add(dust);
 
-  // ----- floating UGHD logo over the spawn -----
+  // ----- floating UGHD logo above the stage -----
   const logo = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.4, 2.4 * 0.32),
+    new THREE.PlaneGeometry(1.8, 1.8 * 0.32),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 })
   );
-  logo.position.set(0, 3.4, -3);
+  logo.position.set(0, 3.2, -3);
   group.add(logo);
   new THREE.TextureLoader().load(LOGO_URL, (t) => {
     logo.material.map = t;
     logo.material.needsUpdate = true;
-    // keep the plane at the logo's real aspect ratio
     const ar = t.image.width / t.image.height;
     logo.geometry.dispose();
-    logo.geometry = new THREE.PlaneGeometry(2.4, 2.4 / ar);
+    logo.geometry = new THREE.PlaneGeometry(1.8, 1.8 / ar);
   });
 
   scene.add(group);
 
-  const pos = dust.geometry.getAttribute('position');
+  const dpos = dust.geometry.getAttribute('position');
   return {
     group,
-    floor, // exposed so teleport can raycast against it
     update() {
-      // gentle upward drift, wrapping at the ceiling
-      for (let i = 0; i < PARTICLES; i++) {
-        let y = pos.getY(i) + 0.0015;
-        if (y > 4.5) y = 0;
-        pos.setY(i, y);
+      // gentle dust drift
+      for (let i = 0; i < DUST; i++) {
+        let y = dpos.getY(i) + 0.0015;
+        if (y > 5) y = 0;
+        dpos.setY(i, y);
       }
-      pos.needsUpdate = true;
-      logo.rotation.y = Math.sin(performance.now() / 4000) * 0.15;
-      // the horizon glow slowly breathes so the room never feels static
-      glow.material.opacity = 0.8 + 0.2 * Math.sin(performance.now() / 2600);
+      dpos.needsUpdate = true;
+      stars.rotation.y += 0.0002; // barely-there parallax
+      logo.rotation.y = Math.sin(performance.now() / 4000) * 0.12;
+      rim.material.opacity = 0.45 + 0.2 * Math.sin(performance.now() / 2400);
     },
   };
 }
 
-function makeGridTexture() {
-  const S = 1024;
+function makeStageTexture() {
+  const S = 512;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, S, S);
-  // grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 2;
-  const step = S / 24;
-  for (let i = 0; i <= 24; i++) {
-    const p = i * step;
-    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, S); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(S, p); ctx.stroke();
-  }
-  // radial fade so the grid dissolves toward the edge + glows at centre
+  // dark glassy disc with a soft cyan centre glow + concentric rings
   const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(0.55, 'rgba(0,0,0,0.1)');
-  g.addColorStop(1, 'rgba(0,0,0,1)');
-  ctx.globalCompositeOperation = 'destination-out';
-  // punch a soft centre highlight back in
-  ctx.globalCompositeOperation = 'source-over';
+  g.addColorStop(0, 'rgba(20,30,42,0.95)');
+  g.addColorStop(0.7, 'rgba(8,12,18,0.9)');
+  g.addColorStop(1, 'rgba(4,6,10,0.6)');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, S, S);
-  const tex = new THREE.CanvasTexture(cv);
-  return tex;
-}
-
-function makeRadialGlowTexture() {
-  const S = 256;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = S;
-  const ctx = cv.getContext('2d');
-  const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.3, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(76,201,255,0.0)');
-  g.addColorStop(0.7, 'rgba(76,201,255,0.14)');
-  g.addColorStop(1, 'rgba(76,201,255,0.0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, S, S);
+  ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(76,201,255,0.25)';
+  ctx.lineWidth = 2;
+  for (let r = S / 8; r < S / 2; r += S / 8) {
+    ctx.beginPath(); ctx.arc(S / 2, S / 2, r, 0, Math.PI * 2); ctx.stroke();
+  }
   return new THREE.CanvasTexture(cv);
 }
