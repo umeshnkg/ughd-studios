@@ -236,9 +236,14 @@ export function initVR(ctx) {
   }
 
   // ----- session lifecycle -----
-  function onSessionStarted(session) {
+  async function onSessionStarted(session) {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local-floor');
+    // Hand the session to three.js: this creates the XRWebGLLayer the
+    // headset actually draws into. Without it the loop renders to nowhere
+    // (black screen, GPU pinned). Must happen before setAnimationLoop.
+    await renderer.xr.setSession(session);
+
     if (!vrGroup) buildCylinder();
 
     // park the camera at the cylinder centre via a rig (XR drives the camera)
