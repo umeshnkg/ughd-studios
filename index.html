@@ -9,15 +9,13 @@
       content="We turn songs into visuals — and visuals into audiences. UGHD Studios has worked with Sony, Warner and the world's biggest artists for over a decade."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- self-hosted fonts: preload the two used to paint the canvas labels
+         (Space Grotesk 600 / Space Mono 400) so the gallery isn't gated -->
+    <link rel="preload" href="/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/space-mono-400-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/styles.css" />
-    <link rel="stylesheet" href="/src/about.css" />
-    <link rel="stylesheet" href="/src/careers.css" />
+    <!-- about.css / careers.css are loaded on demand by pages.js when the
+         About/Careers card first slides up — they don't block the gallery -->
   </head>
   <body>
     <canvas id="scene"></canvas>
