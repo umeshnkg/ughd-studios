@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { EYE_Y } from './constants.js';
+import gsap from 'gsap';
+import { EYE_Y, FOCUS_DUR } from './constants.js';
 
 // ============================================================
 // Focus view: selecting a panel flies a large copy in front of the
@@ -18,6 +19,7 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
     new THREE.MeshBasicMaterial({ transparent: true })
   );
   group.add(panel);
+  const mats = [panel.material]; // tweened together for fade in/out
 
   // caption strip
   const cv = document.createElement('canvas');
@@ -29,6 +31,7 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
     new THREE.MeshBasicMaterial({ map: captionTex, transparent: true })
   );
   group.add(caption);
+  mats.push(caption.material);
   scene.add(group);
 
   // one reusable <video> for playback
@@ -102,29 +105,36 @@ export function createFocus({ scene, camera, duckMusic, unduckMusic }) {
       panel.material.needsUpdate = true;
     }
 
-    // place where the viewer looks, level (no pitch) so it's comfortable
+    // place where the viewer looks, level (no pitch) so it's comfortable;
+    // ease in slightly from further away so it "arrives" toward them
     camera.getWorldPosition(camPos);
     camera.getWorldDirection(camDir);
     camDir.y = 0; camDir.normalize();
-    group.position.copy(camPos).add(camDir.multiplyScalar(2.8));
-    group.position.y = EYE_Y;
+    const dest = camPos.clone().add(camDir.clone().multiplyScalar(2.8)).setY(EYE_Y);
+    const start = camPos.clone().add(camDir.clone().multiplyScalar(3.5)).setY(EYE_Y);
+    group.position.copy(start);
     group.lookAt(camPos.x, EYE_Y, camPos.z);
 
     group.visible = true;
-    let t = 0;
-    group.scale.setScalar(0.6);
-    const grow = () => {
-      t += 0.12;
-      const k = Math.min(t, 1);
-      group.scale.setScalar(0.6 + 0.4 * (1 - (1 - k) * (1 - k)));
-      if (k < 1 && group.visible) requestAnimationFrame(grow);
-    };
-    grow();
+    gsap.killTweensOf(group.scale);
+    gsap.killTweensOf(group.position);
+    gsap.killTweensOf(mats);
+    group.scale.setScalar(0.85);
+    for (const m of mats) m.opacity = 0;
+    gsap.to(group.scale, { x: 1, y: 1, z: 1, duration: FOCUS_DUR, ease: 'power3.out' });
+    gsap.to(group.position, { x: dest.x, y: dest.y, z: dest.z, duration: FOCUS_DUR, ease: 'power3.out' });
+    gsap.to(mats, { opacity: 1, duration: FOCUS_DUR * 0.7, ease: 'power2.out' });
   }
 
   function dismiss() {
-    group.visible = false;
-    stopVideo();
+    if (!group.visible) return;
+    gsap.killTweensOf(group.scale);
+    gsap.killTweensOf(mats);
+    gsap.to(group.scale, { x: 0.85, y: 0.85, z: 0.85, duration: FOCUS_DUR * 0.7, ease: 'power2.in' });
+    gsap.to(mats, {
+      opacity: 0, duration: FOCUS_DUR * 0.7, ease: 'power2.in',
+      onComplete: () => { group.visible = false; stopVideo(); },
+    });
   }
 
   return {

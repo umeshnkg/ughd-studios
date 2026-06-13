@@ -5,7 +5,8 @@ import { createGallery } from './gallery.js';
 import { createTeleport } from './teleport.js';
 import { createFocus } from './focus.js';
 import { createUI } from './ui.js';
-import { duckMusic, unduckMusic } from '../audio.js';
+import { duckMusic, unduckMusic, startAmbient, stopAmbient,
+         playTick, playClick, playWhoosh } from '../audio.js';
 
 // ============================================================
 // WebXR (Meta Quest) experience — orchestrator.
@@ -53,10 +54,13 @@ export function initVR(ctx) {
     btn.className = 'btn btn--light vrbtn';
     btn.textContent = 'Enter VR';
     btn.addEventListener('click', () => {
-      if (renderer.xr.isPresenting) renderer.xr.getSession()?.end();
-      else navigator.xr.requestSession('immersive-vr', {
+      if (renderer.xr.isPresenting) { renderer.xr.getSession()?.end(); return; }
+      // start audio inside the click gesture so it isn't blocked after the
+      // async setSession; undo it if the session never opens
+      startAmbient();
+      navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
-      }).then(onSessionStarted).catch((e) => console.warn('VR start failed', e));
+      }).then(onSessionStarted).catch((e) => { console.warn('VR start failed', e); stopAmbient(); });
     });
     header.appendChild(btn);
     ctx.button = btn;
@@ -122,6 +126,7 @@ export function initVR(ctx) {
         leftController: leftCtrl,
         getLeftSource: () => leftCtrl.userData.inputSource,
         rig, floorMesh: env.floor, pads: gallery.pads, blink, scene: vrRoot,
+        onTeleport: () => playWhoosh(),
       });
     }
   }
@@ -135,23 +140,28 @@ export function initVR(ctx) {
     const targets = [...gallery.panels, ...(ui ? ui.buttons : [])];
     const hit = raycaster.intersectObjects(targets, false)[0]?.object || null;
     if (ui && ui.buttons.includes(hit)) { ui.setHover(hit); gallery.clearHover(); rightHover = hit; }
-    else if (gallery.panels.includes(hit)) { gallery.setHover(hit); ui && ui.setHover(null); rightHover = hit; }
+    else if (gallery.panels.includes(hit)) {
+      if (gallery.setHover(hit)) playTick(); // tick only when the target changes
+      ui && ui.setHover(null); rightHover = hit;
+    }
     else { gallery.clearHover(); ui && ui.setHover(null); rightHover = null; }
   }
 
   function onSelect() {
     if (!built) return;
     if (focus.isOpen()) {
+      playWhoosh();
       focus.dismiss();
-      gallery.setVisible(true);
+      gallery.dim(false);
       teleport && teleport.setVisible(true);
       return;
     }
     if (!rightHover) return;
-    if (ui && ui.trigger(rightHover)) return; // exit / recenter
-    // otherwise it's a work panel → open the focus view
+    if (ui && ui.buttons.includes(rightHover)) { playClick(); ui.trigger(rightHover); return; }
+    // otherwise it's a work panel → open the focus view (whoosh = the swell)
+    playWhoosh();
     focus.open(rightHover);
-    gallery.setVisible(false);
+    gallery.dim(true);
     teleport && teleport.setVisible(false);
   }
 
@@ -178,14 +188,16 @@ export function initVR(ctx) {
     if (blink) blink.shell.visible = true;
     ui && ui.reset();
 
-    // arrival: fade the panels in
+    // arrival: ambient track was started in the click gesture; now
+    // materialize the panels in a wave
     gallery.group.visible = true;
-    gsap.fromTo(gallery.group.scale, { x: 0.9, y: 0.9, z: 0.9 },
-      { x: 1, y: 1, z: 1, duration: 1.2, ease: 'power3.out' });
+    gallery.playIntro();
 
     renderer.setAnimationLoop(() => {
       if (built) {
+        const t = performance.now() / 1000;
         env.update();
+        gallery.update(t); // idle breathing continues even behind the focus view
         if (focus.isOpen()) {
           gallery.clearHover(); ui && ui.setHover(null);
           teleport && teleport.update(false);
@@ -210,6 +222,7 @@ export function initVR(ctx) {
     if (blink) blink.shell.visible = false;
     if (rig) rig.remove(camera); // hand the camera back to the desktop loop
     camera.position.copy(savedCamPos);
+    stopAmbient(); // restore the saved sound preference for the flat site
     if (ctx.button) ctx.button.textContent = 'Enter VR';
     onExit();
   }

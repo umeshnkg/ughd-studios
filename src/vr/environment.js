@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ACCENT } from './constants.js';
 
 // ============================================================
 // Branded VR environment — the "set" the gallery hall sits in.
@@ -54,7 +55,7 @@ export function createEnvironment(scene) {
   const dust = new THREE.Points(
     dustGeo,
     new THREE.PointsMaterial({
-      color: 0xffffff,
+      color: 0xcfeeff, // faint cyan tint to match the accent
       size: 0.02,
       transparent: true,
       opacity: 0.35,
@@ -94,6 +95,8 @@ export function createEnvironment(scene) {
       }
       pos.needsUpdate = true;
       logo.rotation.y = Math.sin(performance.now() / 4000) * 0.15;
+      // the horizon glow slowly breathes so the room never feels static
+      glow.material.opacity = 0.8 + 0.2 * Math.sin(performance.now() / 2600);
     },
   };
 }
@@ -134,9 +137,9 @@ function makeRadialGlowTexture() {
   cv.width = cv.height = S;
   const ctx = cv.getContext('2d');
   const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.3, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(120,140,255,0.0)');
-  g.addColorStop(0.7, 'rgba(120,140,255,0.10)');
-  g.addColorStop(1, 'rgba(120,140,255,0.0)');
+  g.addColorStop(0, 'rgba(76,201,255,0.0)');
+  g.addColorStop(0.7, 'rgba(76,201,255,0.14)');
+  g.addColorStop(1, 'rgba(76,201,255,0.0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, S, S);
   return new THREE.CanvasTexture(cv);

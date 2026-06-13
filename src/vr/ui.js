@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EYE_Y } from './constants.js';
+import { EYE_Y, ACCENT } from './constants.js';
 
 // ============================================================
 // In-world UI:
@@ -48,9 +48,15 @@ export function createUI({ scene, leftController, onExit, onRecenter }) {
     buttons,
     setHover(mesh) {
       if (mesh === hovered) return;
-      if (hovered) hovered.scale.setScalar(hovered.userData.baseScale);
+      if (hovered) {
+        hovered.scale.setScalar(hovered.userData.baseScale);
+        hovered.material.color.setHex(0xffffff);
+      }
       hovered = buttons.includes(mesh) ? mesh : null;
-      if (hovered) hovered.scale.setScalar(1.15);
+      if (hovered) {
+        hovered.scale.setScalar(1.15);
+        hovered.material.color.setHex(ACCENT); // cyan-tint the hovered pill
+      }
     },
     trigger(mesh) {
       if (buttons.includes(mesh)) { mesh.userData.action?.(); return true; }

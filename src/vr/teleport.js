@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ACCENT } from './constants.js';
 
 // ============================================================
 // Comfort-first locomotion:
@@ -15,7 +16,7 @@ const SNAP_ANGLE = THREE.MathUtils.degToRad(30);
 const PAD_SNAP_DIST = 1.3;
 const FLOOR_LIMIT = 11; // keep teleports inside the floor disc
 
-export function createTeleport({ leftController, getLeftSource, rig, floorMesh, pads, blink, scene }) {
+export function createTeleport({ leftController, getLeftSource, rig, floorMesh, pads, blink, scene, onTeleport }) {
   const raycaster = new THREE.Raycaster();
   const tmpMatrix = new THREE.Matrix4();
   const hitPoint = new THREE.Vector3();
@@ -28,7 +29,7 @@ export function createTeleport({ leftController, getLeftSource, rig, floorMesh, 
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.35, 0.5, 32),
       new THREE.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.35,
+        color: ACCENT, transparent: true, opacity: 0.35,
         blending: THREE.AdditiveBlending, depthWrite: false,
       })
     );
@@ -41,7 +42,7 @@ export function createTeleport({ leftController, getLeftSource, rig, floorMesh, 
   // ----- aiming ray + reticle -----
   const rayLine = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
-    new THREE.LineBasicMaterial({ color: 0x88aaff, transparent: true, opacity: 0.8 })
+    new THREE.LineBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.8 })
   );
   rayLine.visible = false;
   scene.add(rayLine);
@@ -49,7 +50,7 @@ export function createTeleport({ leftController, getLeftSource, rig, floorMesh, 
   const reticle = new THREE.Mesh(
     new THREE.RingGeometry(0.25, 0.4, 32),
     new THREE.MeshBasicMaterial({
-      color: 0x88aaff, transparent: true, opacity: 0.9,
+      color: ACCENT, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false,
     })
   );
@@ -104,6 +105,7 @@ export function createTeleport({ leftController, getLeftSource, rig, floorMesh, 
     blink(() => {
       rig.position.x = dest.x;
       rig.position.z = dest.z;
+      onTeleport?.();
     });
     validTarget = null;
   }
@@ -115,6 +117,15 @@ export function createTeleport({ leftController, getLeftSource, rig, floorMesh, 
     },
     update(enabled) {
       if (!enabled) return;
+
+      // pads breathe so they read as live targets
+      const pulse = 0.28 + 0.12 * Math.sin(performance.now() / 600);
+      for (const m of padMeshes) if (m.visible) m.material.opacity = pulse;
+      if (reticle.visible) {
+        const s = 1 + 0.08 * Math.sin(performance.now() / 220);
+        reticle.scale.setScalar(s);
+      }
+
       const { x, y } = readStick();
 
       // snap turn (latched so one flick = one turn)
