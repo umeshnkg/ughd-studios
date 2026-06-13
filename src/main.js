@@ -344,11 +344,13 @@ const tileGeometry = new THREE.PlaneGeometry(TILE_W, TILE_H);
 let texturesLoaded = 0;
 const totalTextures = projects.length;
 const loaderPct = document.getElementById('loaderPct');
+const loaderBar = document.getElementById('loaderBar');
 
 function bumpLoader() {
   texturesLoaded++;
-  loaderPct.textContent =
-    Math.round((texturesLoaded / totalTextures) * 100) + '%';
+  const pct = Math.round((texturesLoaded / totalTextures) * 100);
+  loaderPct.textContent = pct + '%';
+  loaderBar.style.width = pct + '%';
   if (texturesLoaded === totalTextures) onReady();
 }
 
