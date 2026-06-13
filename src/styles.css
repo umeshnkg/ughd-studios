@@ -201,6 +201,16 @@ body {
   background: rgba(50, 50, 50, 0.9);
 }
 
+/* VR button — only injected on a headset-capable browser, floated out
+   of the masthead flex so it never disturbs the existing layout */
+.vrbtn {
+  position: absolute;
+  top: 92px;
+  right: 36px;
+  padding: 10px 22px;
+  font-size: 13px;
+}
+
 /* ===== Bottom nav ===== */
 .viewtoggle {
   display: flex;

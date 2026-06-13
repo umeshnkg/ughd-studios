@@ -5,6 +5,7 @@ import { initAudio, playTick, duckMusic, unduckMusic } from './audio.js';
 import { initLeadForm } from './leadform.js';
 import { initPages, isPageOpen } from './pages.js';
 import { initNavPill } from './navpill.js';
+import { initVR } from './vr.js';
 
 // ============================================================
 // Constants
@@ -918,7 +919,12 @@ setTimeout(() => onReady(), 8000);
 // ============================================================
 // Render loop
 // ============================================================
+// while a headset session owns the loop (renderer.setAnimationLoop), the
+// desktop rAF chain pauses; it resumes when VR exits.
+let vrActive = false;
+
 function animate() {
+  if (vrActive) return;
   requestAnimationFrame(animate);
 
   off.x += (target.x - off.x) * LERP;
@@ -976,4 +982,24 @@ window.addEventListener('resize', () => {
 document.fonts.ready.then(() => {
   buildCards();
   animate();
+
+  // Progressive enhancement: a Quest browser gets an "Enter VR" button.
+  // Entering hides the flat grid + post pass and hands the loop to XR.
+  initVR({
+    renderer,
+    scene,
+    camera,
+    projectArt,
+    tileGeometry,
+    makeCardMaterial,
+    onEnter: () => {
+      vrActive = true;
+      group.visible = false; // hide the flat wrapping grid
+    },
+    onExit: () => {
+      vrActive = false;
+      group.visible = true;
+      animate(); // resume the desktop loop + fisheye post pass
+    },
+  });
 });
