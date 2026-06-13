@@ -1,5 +1,10 @@
 // Portfolio data extracted from lyricvideo.tv, ughdstudios.com, umesh.design
 // YouTube IDs sourced from the live portfolio embeds on lyricvideo.tv
+//
+// Optional `video` field: a hosted MP4 path (e.g. '/reels/<slug>.mp4',
+// dropped in public/reels/). The VR focus view plays it with sound;
+// without it the focus view shows the still artwork. YouTube can't be
+// used here — it won't texture into WebGL inside a headset.
 
 export const projects = [
   {

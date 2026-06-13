@@ -2,3 +2,5 @@ node_modules/
 dist/
 .DS_Store
 .dev.vars
+# uncompressed audio masters — only the mp3/webm under public/ are served
+*.wav

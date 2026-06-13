@@ -18,19 +18,28 @@ let washTarget = 0;
 let wash = 0;
 
 // The work gallery (homepage) gets its own track; every other page
-// keeps the lounge music. Each page is a full load, so the track is
-// simply picked at boot.
+// keeps the lounge music. On direct loads the track is picked at boot;
+// the homepage's SPA card overlay also swaps it at runtime via
+// switchTrack() (see pages.js) since those navigations never reload.
+const WORK_TRACK = 'UGHD%20Studios%20-%20Ambient%20Space%20Sound%20FX';
+const LOUNGE_TRACK = 'UGHD%20Studios%20Lounge%20Music';
 const isWorkPage = location.pathname === '/' || location.pathname.endsWith('/index.html');
-const TRACK = isWorkPage ? 'UGHD%20Website%20-%20Work%20Music' : 'UGHD%20Studios%20Lounge%20Music';
+let currentTrack = isWorkPage ? WORK_TRACK : LOUNGE_TRACK;
 
 const bgMusic = document.createElement('audio');
 bgMusic.loop = true;
 bgMusic.style.display = 'none';
-bgMusic.innerHTML = `
-  <source src="/${TRACK}.webm" type="audio/webm">
-  <source src="/${TRACK}.mp3" type="audio/mpeg">
-`;
 document.body.appendChild(bgMusic);
+
+// (re)point the element at a track (webm with mp3 fallback) and reload
+function setBgSource(base) {
+  bgMusic.innerHTML = `
+    <source src="/${base}.webm" type="audio/webm">
+    <source src="/${base}.mp3" type="audio/mpeg">
+  `;
+  bgMusic.load();
+}
+setBgSource(currentTrack);
 
 // celestial-hall impulse response: stereo noise with a short pre-delay,
 // a slow fade-in bloom (the reverb swells instead of slapping back) and
@@ -171,6 +180,35 @@ function fadeInMusic(duration = 1.5) {
   gsap.to(nodes.music.gain, { value: MUSIC_VOL, duration, ease: 'power2.inOut' });
 }
 
+// ---- runtime track switching (homepage SPA card open/close) ----
+// fade the current track down, swap the source, fade the new one up.
+// When music is off / not yet started, just repoint the source so the
+// next tryPlay() picks up the right track.
+export function switchTrack(base) {
+  if (base === currentTrack) return;
+  currentTrack = base;
+
+  if (!nodes || !bgMusicOn || bgMusic.paused) {
+    setBgSource(base);
+    return;
+  }
+
+  gsap.killTweensOf(nodes.music.gain);
+  gsap.to(nodes.music.gain, {
+    value: 0,
+    duration: 0.4,
+    ease: 'power2.out',
+    onComplete: () => {
+      setBgSource(base);
+      bgMusic.play().catch(() => {});
+      gsap.to(nodes.music.gain, { value: MUSIC_VOL, duration: 0.8, ease: 'power2.inOut' });
+    },
+  });
+}
+
+export const playWorkMusic = () => switchTrack(WORK_TRACK);
+export const playLoungeMusic = () => switchTrack(LOUNGE_TRACK);
+
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer);
   if (fadedByInactivity) {
@@ -200,18 +238,61 @@ export function unduckMusic() {
 // ---- UI sounds ----
 export function playTick() {
   const sfx = new Audio('/Hover%20sound%20fx.mp3');
-  sfx.volume = 0.25;
+  sfx.volume = 0.20;
   sfx.play().catch(() => {});
 }
 
 export function playClick() {
   const sfx = new Audio('/Click%20sound%20FX.mp3');
-  sfx.volume = 0.6;
+  sfx.volume = 0.48;
   sfx.play().catch(() => {});
 }
 
 export function isSoundOn() {
   return bgMusicOn;
+}
+
+// ---- immersive (VR) audio ----
+// Entering VR is a user gesture, so we can start the ambient track even
+// when the saved preference is off. We bypass the bgMusicOn gate in
+// tryPlay() directly; because the inactivity/visibility fades are all
+// gated by bgMusicOn, none of them fight this while it's off.
+export function startAmbient() {
+  ensureCtx().resume().catch(() => {});
+  gsap.killTweensOf(nodes.music.gain);
+  nodes.music.gain.value = MUSIC_VOL;
+  bgMusic.play().catch(() => {});
+}
+
+export function stopAmbient() {
+  // leave it playing if the user actually has sound on for the flat site
+  if (!bgMusicOn) bgMusic.pause();
+}
+
+// A short synthesized noise sweep — used for teleport / focus cues so we
+// don't ship another audio asset. Runs through the existing AudioContext.
+export function playWhoosh() {
+  const c = ensureCtx();
+  c.resume().catch(() => {});
+  const now = c.currentTime;
+  const dur = 0.5;
+  const buf = c.createBuffer(1, Math.floor(c.sampleRate * dur), c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const noise = c.createBufferSource();
+  noise.buffer = buf;
+  const bp = c.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.7;
+  bp.frequency.setValueAtTime(280, now);
+  bp.frequency.exponentialRampToValueAtTime(2200, now + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.12, now + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  noise.connect(bp); bp.connect(g); g.connect(c.destination);
+  noise.start(now);
+  noise.stop(now + dur);
 }
 
 // ---- bootstrap: toggle wiring, autoplay attempts, global click SFX ----
@@ -236,6 +317,7 @@ export function initAudio() {
   // the navigation just long enough for a fast fade so the track doesn't
   // cut off abruptly (each page restarts its own music on load)
   document.addEventListener('click', (e) => {
+    if (e.defaultPrevented) return; // SPA router (pages.js) already took this click
     const a = e.target.closest('a[href]');
     if (!a) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
