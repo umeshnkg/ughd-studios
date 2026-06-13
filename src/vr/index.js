@@ -87,6 +87,13 @@ export function initVR(ctx) {
     };
     blink.shell = shell;
 
+    // gsap's ticker runs on window.requestAnimationFrame, which the browser
+    // SUSPENDS during an immersive WebXR session — so tweens freeze. We drive
+    // gsap manually from the XR frame loop instead (see setAnimationLoop).
+    // lagSmoothing(0) stops it from swallowing the large time delta when the
+    // page-rAF clock and the XR clock diverge.
+    gsap.ticker.lagSmoothing(0);
+
     built = true;
   }
 
@@ -196,6 +203,7 @@ export function initVR(ctx) {
     renderer.setAnimationLoop(() => {
       if (built) {
         const t = performance.now() / 1000;
+        gsap.updateRoot(t); // advance gsap on the XR clock (rAF is suspended)
         env.update();
         gallery.update(t); // idle breathing continues even behind the focus view
         if (focus.isOpen()) {
