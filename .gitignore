@@ -4,3 +4,6 @@ dist/
 .dev.vars
 # uncompressed audio masters — only the mp3/webm under public/ are served
 *.wav
+
+# generated thumbnail variants (rebuilt by `npm run optimize:images` / prebuild)
+public/thumbs/opt/

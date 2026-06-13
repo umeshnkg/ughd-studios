@@ -13,6 +13,28 @@ const PAGES = {
   careers: '/careers.html',
 };
 
+// about.css / careers.css style the injected page-card content but aren't
+// needed for the gallery itself — so they're kept off the homepage's
+// critical render path and loaded on demand the first time a page opens.
+const PAGE_STYLES = ['/src/about.css', '/src/careers.css'];
+let pageStylesPromise = null;
+function ensurePageStyles() {
+  if (pageStylesPromise) return pageStylesPromise;
+  pageStylesPromise = Promise.all(
+    PAGE_STYLES.map(
+      (href) =>
+        new Promise((resolve) => {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = href;
+          link.onload = link.onerror = resolve; // never block on a CSS failure
+          document.head.appendChild(link);
+        })
+    )
+  );
+  return pageStylesPromise;
+}
+
 let cardEl, scrollEl, contentEl;
 let open = false;
 let animating = false;
@@ -80,7 +102,10 @@ function cleanUrl(page) {
 
 async function loadPage(page) {
   if (pageCache[page]) return pageCache[page];
+  // make sure the page-card stylesheets are in before content is shown
+  ensurePageStyles();
   const html = await (await fetch(PAGES[page])).text();
+  await pageStylesPromise;
   const main = new DOMParser()
     .parseFromString(html, 'text/html')
     .querySelector('main');
