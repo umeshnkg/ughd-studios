@@ -21,7 +21,7 @@ let wash = 0;
 // keeps the lounge music. On direct loads the track is picked at boot;
 // the homepage's SPA card overlay also swaps it at runtime via
 // switchTrack() (see pages.js) since those navigations never reload.
-const WORK_TRACK = 'UGHD%20Website%20-%20Work%20Music';
+const WORK_TRACK = 'UGHD%20Studios%20-%20Ambient%20Space%20Sound%20FX';
 const LOUNGE_TRACK = 'UGHD%20Studios%20Lounge%20Music';
 const isWorkPage = location.pathname === '/' || location.pathname.endsWith('/index.html');
 let currentTrack = isWorkPage ? WORK_TRACK : LOUNGE_TRACK;
