@@ -70,6 +70,7 @@ export function createWarp({ camera }) {
 
   return {
     group,
+    isActive: () => mode !== null,
     playIn(cb) { start('in', WARP_IN_DUR, cb); },
     playOut(cb) { start('out', WARP_OUT_DUR, cb); },
     update(now) {

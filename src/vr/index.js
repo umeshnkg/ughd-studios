@@ -192,9 +192,10 @@ export function initVR(ctx) {
     if (!built) buildWorld();
 
     onEnter();
-    vrRoot.visible = true;
-    // fly in through a star tunnel, then materialise the sphere
-    warp.playIn(() => sphere.playIntro());
+    // fly in through a star tunnel with the world hidden, then reveal +
+    // materialise the sphere (so the orbs/companion don't show during warp)
+    vrRoot.visible = false;
+    warp.playIn(() => { vrRoot.visible = true; sphere.playIntro(); });
 
     renderer.setAnimationLoop(() => {
       if (built) {
@@ -211,8 +212,8 @@ export function initVR(ctx) {
         if (focus.isOpen()) {
           focus.update(t);
           if (inspecting && rightCtrl) focus.inspectFrom(rightCtrl);
-        } else {
-          updatePointer();
+        } else if (!warp.isActive()) {
+          updatePointer(); // no pointer/hover during the warp transition
         }
       }
       renderer.render(scene, camera);
