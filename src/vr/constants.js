@@ -7,7 +7,15 @@ export const SPHERE_RADIUS = 5.5; // tiles float on a sphere this far out
 export const SPHERE_TILES = 150; // ~filled via repeated, shuffled projectArt
 export const SPHERE_TILE_SCALE = 0.42; // shrink the desktop tile geometry (3.2×2.875)
 export const SPHERE_ROT_SPEED = 0.035; // rad/s auto-rotation (~2°/s), kept slow
-export const SPHERE_TILT = 0.12; // gentle constant tilt of the spin axis
+export const SPHERE_TILT = 0.02; // near-level spin axis (was visibly lopsided)
+export const SPHERE_RADIUS_JITTER = 0.07; // ±fraction of radius so neighbour corners don't clash
+
+// Filter re-arrange: matching cards cluster in front at a closer radius.
+export const FILTER_CLOSE = 0.82; // matching tiles pulled to this × radius (nearer)
+
+// Warp transition (enter/exit "star tunnel")
+export const WARP_IN_DUR = 1.6; // seconds
+export const WARP_OUT_DUR = 1.2;
 
 // ---- Floating stage ----
 export const STAGE_RADIUS = 1.7; // the platform you stand on

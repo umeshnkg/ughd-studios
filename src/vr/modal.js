@@ -35,20 +35,23 @@ export function createModal({ scene, camera }) {
   let content = null;
   let open = false;
   let onCloseCb = null;
+  let extraTargets = [];
   const camPos = new THREE.Vector3();
   const camDir = new THREE.Vector3();
 
   return {
     closeButton: closeBtn,
     isOpen: () => open,
+    contentTargets: () => extraTargets,
 
-    open(group, { w = 2.6, h = 1.6, onClose } = {}) {
+    open(group, { w = 2.6, h = 1.6, onClose, targets = [] } = {}) {
       if (content) wrapper.remove(content);
       content = group;
       content.renderOrder = 2;
       wrapper.add(content);
       closeBtn.position.set(w / 2 + 0.18, h / 2 + 0.18, 0.02);
       onCloseCb = onClose;
+      extraTargets = targets;
 
       camera.getWorldPosition(camPos);
       camera.getWorldDirection(camDir);
@@ -95,5 +98,7 @@ function makeClose() {
     new THREE.MeshBasicMaterial({ map: tex, transparent: true })
   );
   mesh.userData.closeButton = true;
+  mesh.userData.hoverable = true;
+  mesh.userData.baseScale = 1;
   return mesh;
 }

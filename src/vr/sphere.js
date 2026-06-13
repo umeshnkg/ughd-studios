@@ -1,18 +1,21 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
 import { EYE_Y, SPHERE_RADIUS, SPHERE_TILES, SPHERE_TILE_SCALE,
-         SPHERE_ROT_SPEED, SPHERE_TILT, ACCENT, HOVER_SCALE, HOVER_DUR } from './constants.js';
+         SPHERE_ROT_SPEED, SPHERE_TILT, SPHERE_RADIUS_JITTER, FILTER_CLOSE,
+         ACCENT, HOVER_SCALE, HOVER_DUR } from './constants.js';
 
 // ============================================================
-// The work browser: tiles spread evenly over a sphere around the
-// viewer (Fibonacci distribution), the whole thing slowly auto-
-// rotating. Look around to browse; grip to pause. Tiles reuse the
-// loaded project textures, repeating to fill the sphere.
-//   tiltGroup (fixed tilt) → spinGroup (auto-rotates) → tiles + rim
+// The work browser: tiles spread over a sphere around the viewer
+// (Fibonacci distribution, slight per-tile radial jitter so corners
+// don't clash), slowly auto-rotating. Choosing a filter re-arranges
+// the sphere: matching cards pulse into a closer cluster in front of
+// your gaze, the rest spread evenly across the globe.
+//   tiltGroup (near-level) → spin (auto-rotates) → tiles + rim
 // ============================================================
 
 const TILE_W = 3.2 * SPHERE_TILE_SCALE;
 const TILE_H = 2.875 * SPHERE_TILE_SCALE;
+const ZAXIS = new THREE.Vector3(0, 0, 1);
 
 export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial }) {
   const tiltGroup = new THREE.Group();
@@ -22,8 +25,9 @@ export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial
   tiltGroup.add(spin);
 
   const tiles = [];
+  // fixed slots (direction + jittered radius + inward-facing quaternion)
+  const slots = [];
 
-  // shared cyan glow rim that slides behind the hovered tile
   const rim = new THREE.Mesh(
     new THREE.PlaneGeometry(TILE_W * 1.16, TILE_H * 1.18),
     new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0,
@@ -32,7 +36,7 @@ export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial
   rim.visible = false;
   spin.add(rim);
 
-  // deal shuffled project art across the tiles, repeating to fill
+  // deal shuffled project art across tiles, repeating to fill
   const deal = [];
   while (deal.length < SPHERE_TILES) {
     const copy = projectArt.map((_, i) => i);
@@ -43,26 +47,30 @@ export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial
     deal.push(...copy);
   }
 
-  // Fibonacci sphere — even spacing, no clumping at the poles
   const golden = Math.PI * (3 - Math.sqrt(5));
   for (let i = 0; i < SPHERE_TILES; i++) {
     const art = projectArt[deal[i]];
-    const y = 1 - (i / (SPHERE_TILES - 1)) * 2;
-    const r = Math.sqrt(1 - y * y);
+    const yy = 1 - (i / (SPHERE_TILES - 1)) * 2;
+    const r = Math.sqrt(1 - yy * yy);
     const theta = golden * i;
-    const pos = new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r)
-      .multiplyScalar(SPHERE_RADIUS);
+    const dir = new THREE.Vector3(Math.cos(theta) * r, yy, Math.sin(theta) * r).normalize();
+    // ±jitter so neighbouring corners sit at different depths
+    const jitter = 1 + (Math.random() * 2 - 1) * SPHERE_RADIUS_JITTER;
+    const radius = SPHERE_RADIUS * jitter;
+    // face the sphere centre, computed in local space (independent of tilt)
+    const quat = new THREE.Quaternion().setFromUnitVectors(ZAXIS, dir.clone().negate());
+    slots.push({ dir, radius, pos: dir.clone().multiplyScalar(radius), quat });
+
     const uSat = { value: 1 };
     const mat = makeCardMaterial(art.tex, uSat);
     const mesh = new THREE.Mesh(tileGeometry, mat);
-    mesh.position.copy(pos);
+    mesh.position.copy(slots[i].pos);
+    mesh.quaternion.copy(quat);
     mesh.scale.setScalar(SPHERE_TILE_SCALE);
-    mesh.lookAt(0, 0, 0); // face the sphere centre (the viewer)
     mesh.userData.project = art.p;
     mesh.userData.baseScale = SPHERE_TILE_SCALE;
     mesh.userData.uSat = uSat;
-    mesh.userData.basePos = pos.clone();
-    mesh.userData.baseQuat = mesh.quaternion.clone();
+    mesh.userData.homeSlot = i;
     spin.add(mesh);
     tiles.push(mesh);
   }
@@ -71,11 +79,12 @@ export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial
 
   let hovered = null;
   let paused = false;
+  let filterActive = false;
   let lastT = performance.now() / 1000;
 
   function moveRimTo(mesh) {
-    rim.position.copy(mesh.userData.basePos);
-    rim.quaternion.copy(mesh.userData.baseQuat);
+    rim.position.copy(mesh.position);
+    rim.quaternion.copy(mesh.quaternion);
     rim.translateZ(-0.03);
     rim.visible = true;
   }
@@ -100,35 +109,78 @@ export function createSphere({ scene, projectArt, tileGeometry, makeCardMaterial
   }
 
   // mirror the site's tag matching (src/main.js applyFilter)
-  function matches(p, tag) {
-    if (tag === 'ALL') return true;
-    return p.tags.some((t) => t.includes(tag));
+  const matches = (p, tag) => tag === 'ALL' || p.tags.some((t) => t.includes(tag));
+
+  // assign each tile a target slot + radius, then pulse (fade → move → fade)
+  function rearrange(assignTargets) {
+    const targets = assignTargets(); // [{tile, pos, quat, sat, opacity}]
+    const mats = tiles.map((m) => m.material);
+    gsap.killTweensOf(mats);
+    gsap.timeline()
+      .to(mats, { opacity: 0, duration: 0.22, ease: 'power2.in' })
+      .add(() => {
+        for (const t of targets) {
+          t.tile.position.copy(t.pos);
+          t.tile.quaternion.copy(t.quat);
+          t.tile.userData.uSat.value = t.sat;
+          t.tile.userData.filtered = t.opacity < 1;
+        }
+        if (hovered) { hovered.scale.setScalar(SPHERE_TILE_SCALE); hovered = null; rim.visible = false; }
+      })
+      .add(() => {
+        for (const t of targets) gsap.to(t.tile.material, { opacity: t.opacity, duration: 0.42, ease: 'power2.out' });
+      });
   }
 
   return {
     group: tiltGroup,
+    spin,
     tiles,
     setHover,
     clearHover: () => setHover(null),
     get hovered() { return hovered; },
     setPaused(v) { paused = v; },
+    isFilterActive: () => filterActive,
 
     update(t) {
       const dt = Math.min(t - lastT, 0.1);
       lastT = t;
-      if (!paused) spin.rotation.y += SPHERE_ROT_SPEED * dt;
+      if (!paused && !filterActive) spin.rotation.y += SPHERE_ROT_SPEED * dt;
     },
 
-    // desaturate + dim non-matching tiles; matching stay full (like the site)
-    applyFilter(tag) {
-      for (const m of tiles) {
-        const ok = matches(m.userData.project, tag);
-        gsap.killTweensOf(m.userData.uSat);
-        gsap.to(m.userData.uSat, { value: ok ? 1 : 0, duration: 0.5, ease: 'power2.out' });
-        gsap.killTweensOf(m.material);
-        gsap.to(m.material, { opacity: ok ? 1 : 0.22, duration: 0.5, ease: 'power2.out' });
-        m.userData.filtered = !ok;
+    // tag === 'ALL' restores the even sphere + resumes spin; otherwise
+    // cluster matches in front (closer) and spread the rest evenly
+    applyFilter(tag, frontDirWorld) {
+      if (tag === 'ALL') {
+        filterActive = false;
+        rearrange(() => tiles.map((tile) => {
+          const s = slots[tile.userData.homeSlot];
+          return { tile, pos: s.pos, quat: s.quat, sat: 1, opacity: 1 };
+        }));
+        return;
       }
+      filterActive = true;
+      // front direction in spin-local space
+      const q = new THREE.Quaternion(); spin.getWorldQuaternion(q); q.invert();
+      const front = frontDirWorld.clone().applyQuaternion(q).normalize();
+      // rank slots by closeness to the front direction
+      const order = slots.map((s, i) => ({ i, a: s.dir.angleTo(front) }))
+        .sort((x, y) => x.a - y.a).map((o) => o.i);
+      const matched = [], rest = [];
+      for (const tile of tiles) (matches(tile.userData.project, tag) ? matched : rest).push(tile);
+
+      rearrange(() => {
+        const out = [];
+        matched.forEach((tile, k) => {
+          const s = slots[order[k]];
+          out.push({ tile, pos: s.dir.clone().multiplyScalar(s.radius * FILTER_CLOSE), quat: s.quat, sat: 1, opacity: 1 });
+        });
+        rest.forEach((tile, k) => {
+          const s = slots[order[matched.length + k]];
+          out.push({ tile, pos: s.pos, quat: s.quat, sat: 0, opacity: 0.22 });
+        });
+        return out;
+      });
     },
 
     playIntro() {

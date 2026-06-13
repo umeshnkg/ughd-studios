@@ -7,6 +7,7 @@ import { createModal } from './modal.js';
 import { createTheater } from './theater.js';
 import { createOrbs } from './orbs.js';
 import { createFilter } from './filter.js';
+import { createWarp } from './warp.js';
 import { buildAbout, buildContact } from './panels.js';
 import { duckMusic, unduckMusic, startAmbient, stopAmbient,
          playTick, playClick, playWhoosh } from '../audio.js';
@@ -39,12 +40,13 @@ export function initVR(ctx) {
   let rig = null;
   let rightCtrl = null;
   let env = null, sphere = null, focus = null, modal = null, theater = null,
-      orbs = null, filter = null;
+      orbs = null, filter = null, warp = null;
   const controllers = [];
   const savedCamPos = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
   const tmpMatrix = new THREE.Matrix4();
   let rightHover = null;
+  let uiHover = null; // currently hovered non-tile/orb UI mesh (scaled)
   let inspecting = false;
   let gripHeld = false;
 
@@ -73,13 +75,14 @@ export function initVR(ctx) {
     focus = createFocus({ scene: vrRoot, camera, duckMusic, unduckMusic });
     modal = createModal({ scene: vrRoot, camera });
     theater = createTheater({ duckMusic, unduckMusic });
+    warp = createWarp({ camera });
     orbs = createOrbs({
       scene: vrRoot,
       actions: {
-        demo: () => { modal.open(theater.group, { w: theater.w, h: theater.h, onClose: () => theater.stop() }); theater.play(); },
+        demo: () => { modal.open(theater.group, { w: theater.w, h: theater.h, targets: theater.targets, onClose: () => theater.stop() }); theater.play(); },
         about: () => { const a = buildAbout(); modal.open(a.group, { w: a.w, h: a.h }); },
         contact: () => { const c = buildContact(); modal.open(c.group, { w: c.w, h: c.h }); },
-        exit: () => renderer.xr.getSession()?.end(),
+        exit: () => warp.playOut(() => renderer.xr.getSession()?.end()),
       },
     });
     filter = createFilter({ scene: vrRoot, camera, sphere });
@@ -119,6 +122,21 @@ export function initVR(ctx) {
     rightCtrl = controllers[1] || controllers[0];
   }
 
+  // scale whatever hoverable UI mesh is aimed at (close, pills, companion,
+  // mute), resetting the previous one
+  function setUiHover(mesh) {
+    if (mesh === uiHover) return;
+    if (uiHover) {
+      const prev = uiHover.userData.hoverTarget || uiHover;
+      prev.scale.setScalar(uiHover.userData.baseScale ?? 1);
+    }
+    uiHover = mesh && mesh.userData.hoverable ? mesh : null;
+    if (uiHover) {
+      const tgt = uiHover.userData.hoverTarget || uiHover;
+      tgt.scale.setScalar((uiHover.userData.baseScale ?? 1) * 1.25);
+    }
+  }
+
   // ----- pointer (right controller) -----
   function updatePointer() {
     if (!rightCtrl) return;
@@ -127,21 +145,24 @@ export function initVR(ctx) {
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMatrix);
 
     let targets;
-    if (modal.isOpen()) targets = [modal.closeButton];
-    else targets = [...sphere.tiles, ...orbs.meshes, filter.companion, ...filter.pillTargets()];
+    if (modal.isOpen()) targets = [modal.closeButton, ...modal.contentTargets()];
+    else targets = [...sphere.tiles, ...orbs.meshes, filter.hitProxy, ...filter.pillTargets()];
 
     const hit = raycaster.intersectObjects(targets, false)[0]?.object || null;
     rightHover = hit;
 
-    // route hover highlights
-    if (hit && sphere.tiles.includes(hit)) { if (sphere.setHover(hit)) playTick(); orbs.setHover(null); }
-    else { sphere.clearHover(); orbs.setHover(hit && hit.userData.orb ? hit : null); }
+    // route hover highlights to the right system
+    if (hit && sphere.tiles.includes(hit)) { if (sphere.setHover(hit)) playTick(); orbs.setHover(null); setUiHover(null); }
+    else if (hit && hit.userData.orb) { orbs.setHover(hit); sphere.clearHover(); setUiHover(null); }
+    else if (hit && hit.userData.hoverable) { setUiHover(hit); sphere.clearHover(); orbs.setHover(null); }
+    else { sphere.clearHover(); orbs.setHover(null); setUiHover(null); }
   }
 
   function onSelect() {
     if (!built) return;
     if (modal.isOpen()) {
       if (rightHover === modal.closeButton) { playClick(); modal.close(); }
+      else if (rightHover && rightHover.userData.action) { playClick(); rightHover.userData.action(); }
       return;
     }
     if (focus.isOpen()) { playWhoosh(); focus.dismiss(); return; }
@@ -172,15 +193,17 @@ export function initVR(ctx) {
 
     onEnter();
     vrRoot.visible = true;
-    sphere.playIntro();
+    // fly in through a star tunnel, then materialise the sphere
+    warp.playIn(() => sphere.playIntro());
 
     renderer.setAnimationLoop(() => {
       if (built) {
         const t = performance.now() / 1000;
         gsap.updateRoot(t); // advance gsap on the XR clock
+        warp.update(t);
         env.update();
         orbs.update(t);
-        filter.update();
+        filter.update(t);
         // pause the spin whenever something is being viewed or grabbed
         sphere.setPaused(modal.isOpen() || focus.isOpen() || gripHeld);
         sphere.update(t);

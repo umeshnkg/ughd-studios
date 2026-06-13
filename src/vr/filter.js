@@ -4,34 +4,50 @@ import { ACCENT, COMPANION_DIST, COMPANION_DOWN, COMPANION_SIDE, COMPANION_LAG }
 import { makeCanvasPanel, roundRectPath } from './text.js';
 
 // ============================================================
-// Filter companion: a small, unobtrusive icon that trails your gaze
-// with lag (like a little follower). Point + trigger toggles a tag
-// menu (mirrors the site's filterTags); picking a tag filters the
-// sphere. While the menu is open the companion freezes so the pills
-// are easy to point at.
+// Filter companion: a small glowing "living blob" that trails your
+// gaze with lag (breathing/wobbling so it reads as a creature, not an
+// icon). Point + trigger toggles a tag menu (mirrors filterTags);
+// picking a tag re-arranges the sphere. Frozen while the menu is open.
 // ============================================================
 
-const PILL_W = 0.36;
-const PILL_H = 0.092;
-const PILL_GAP = 0.016;
+const PILL_W = 0.4;
+const PILL_H = 0.1;
+const PILL_GAP = 0.018;
 
 export function createFilter({ scene, camera, sphere }) {
-  // flatten to the main tags (keep the menu readable in VR)
   const tags = filterTags.map((t) => t.label);
 
-  // ----- companion -----
-  const companion = makeCanvasPanel(0.16, 128, 128, (ctx, w, h) => {
-    ctx.fillStyle = 'rgba(8,10,14,0.85)';
-    ctx.beginPath(); ctx.arc(64, 64, 60, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#4cc9ff'; ctx.lineWidth = 7; ctx.lineJoin = 'round';
-    // funnel / filter glyph
-    ctx.beginPath();
-    ctx.moveTo(38, 42); ctx.lineTo(90, 42); ctx.lineTo(70, 70); ctx.lineTo(70, 92); ctx.lineTo(58, 84); ctx.lineTo(58, 70); ctx.closePath();
-    ctx.stroke();
+  // ----- living-blob companion -----
+  const companion = new THREE.Group();
+
+  // soft core
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 24, 20),
+    new THREE.MeshBasicMaterial({ color: 0xddf4ff })
+  );
+  companion.add(core);
+  // raycast proxy (bigger invisible sphere so it's easy to point at);
+  // hovering it scales the whole blob via hoverTarget
+  const proxy = new THREE.Mesh(
+    new THREE.SphereGeometry(0.13, 12, 10),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  proxy.userData.companion = true;
+  proxy.userData.hoverable = true;
+  proxy.userData.baseScale = 1;
+  proxy.userData.hoverTarget = companion;
+  companion.add(proxy);
+  // layered additive glow halos that pulse — the "alive" feel
+  const halos = [0.09, 0.14, 0.2].map((r, i) => {
+    const h = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 20, 16),
+      new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true,
+        opacity: 0.22 - i * 0.05, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    companion.add(h);
+    return h;
   });
-  companion.userData.companion = true;
   companion.renderOrder = 5;
-  companion.material.depthTest = false;
   scene.add(companion);
 
   // ----- menu (hidden until opened) -----
@@ -44,6 +60,8 @@ export function createFilter({ scene, camera, sphere }) {
     pill.position.set(0, ((tags.length - 1) / 2 - i) * (PILL_H + PILL_GAP), 0);
     pill.userData.tag = tag;
     pill.userData.pill = true;
+    pill.userData.hoverable = true;
+    pill.userData.baseScale = 1;
     menu.add(pill);
     pills.push(pill);
   });
@@ -58,14 +76,12 @@ export function createFilter({ scene, camera, sphere }) {
   highlight();
 
   function highlight() {
-    for (const p of pills) {
-      const on = p.userData.tag === activeTag;
-      p.material.color.setHex(on ? ACCENT : 0xffffff);
-    }
+    for (const p of pills) p.material.color.setHex(p.userData.tag === activeTag ? ACCENT : 0xffffff);
   }
 
   return {
     companion,
+    hitProxy: proxy,
     isMenuOpen: () => menuOpen,
     pillTargets: () => (menuOpen ? pills : []),
 
@@ -73,11 +89,10 @@ export function createFilter({ scene, camera, sphere }) {
       menuOpen = !menuOpen;
       menu.visible = menuOpen;
       if (menuOpen) {
-        // anchor the menu beside the companion, facing the viewer
         menu.position.copy(companion.position);
         camera.getWorldPosition(camPos);
         menu.lookAt(camPos);
-        menu.translateX(-0.34); // sit to the left of the icon
+        menu.translateX(-0.4);
       }
     },
 
@@ -85,10 +100,18 @@ export function createFilter({ scene, camera, sphere }) {
       if (!mesh || !mesh.userData.pill) return;
       activeTag = mesh.userData.tag;
       highlight();
-      sphere.applyFilter(activeTag);
+      camera.getWorldDirection(camDir);
+      sphere.applyFilter(activeTag, camDir.clone()); // pass gaze so matches cluster in front
     },
 
-    update() {
+    update(t) {
+      // breathing + wobble so it reads as alive
+      const pulse = 1 + 0.12 * Math.sin(t * 2.2);
+      core.scale.setScalar(pulse);
+      halos.forEach((h, i) => {
+        h.scale.setScalar(pulse * (1 + 0.05 * Math.sin(t * (1.5 + i * 0.6) + i)));
+        h.material.opacity = (0.22 - i * 0.05) * (0.7 + 0.3 * Math.sin(t * 2.2 + i));
+      });
       if (menuOpen) return; // frozen while choosing
       camera.getWorldPosition(camPos);
       camera.getWorldDirection(camDir);
@@ -97,8 +120,10 @@ export function createFilter({ scene, camera, sphere }) {
         .addScaledVector(camDir, COMPANION_DIST)
         .addScaledVector(right, COMPANION_SIDE)
         .addScaledVector(up, -COMPANION_DOWN);
-      companion.position.lerp(target, COMPANION_LAG); // lag = trailing drag
-      companion.lookAt(camPos);
+      // organic drift on top of the gaze target
+      target.x += Math.sin(t * 0.9) * 0.02;
+      target.y += Math.sin(t * 1.3) * 0.02;
+      companion.position.lerp(target, COMPANION_LAG);
     },
   };
 }
