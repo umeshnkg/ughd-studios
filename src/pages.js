@@ -5,7 +5,7 @@
 // gallery keeps living underneath.
 // ============================================================
 import gsap from 'gsap';
-import { setWash } from './audio.js';
+import { setWash, playWorkMusic, playLoungeMusic } from './audio.js';
 import { isLeadOpen } from './leadform.js';
 
 const PAGES = {
@@ -16,8 +16,22 @@ const PAGES = {
 let cardEl, scrollEl, contentEl;
 let open = false;
 let animating = false;
+let navigatingBack = false; // a history.back() is in flight, awaiting popstate
 let currentPage = null;
+let pending = null; // {action:'open'|'close', page} captured while animating
+let currentTl = null; // the in-flight GSAP timeline
 const pageCache = {}; // page -> cached <main> element
+
+// release the animating guard and run the most recent intent that arrived
+// mid-animation (latest wins) so rapid clicks land on the last page asked for
+function settle() {
+  animating = false;
+  if (!pending) return;
+  const p = pending;
+  pending = null;
+  if (p.action === 'close') closePage();
+  else openPage(p.page, true);
+}
 
 export function isPageOpen() {
   return open;
@@ -97,8 +111,8 @@ function showPage(page, main) {
 }
 
 async function openPage(page, push) {
-  if (animating) return;
-  if (open && currentPage === page) return;
+  if (open && currentPage === page && !animating) return;
+  if (animating) { pending = { action: 'open', page }; return; }
   animating = true; // guard before await so rapid clicks can't race through
   let main;
   try {
@@ -116,11 +130,12 @@ async function openPage(page, push) {
   else if (push) history.pushState({ page }, '', cleanUrl(page));
   setActive(page);
   currentPage = page;
+  playLoungeMusic(); // every non-Work SPA page rides the lounge track
 
   if (open) {
     // card already up (e.g. About -> Careers): swap content in place, no animation
-    animating = false;
     showPage(page, main);
+    settle();
     return;
   }
   showPage(page, main);
@@ -130,30 +145,36 @@ async function openPage(page, push) {
   cardEl.setAttribute('aria-hidden', 'false');
   scrollEl.scrollTop = 0;
 
-  gsap.timeline({ onComplete: () => (animating = false) })
+  currentTl?.kill();
+  currentTl = gsap.timeline({ onComplete: settle })
     .set(scrollEl, { borderTopLeftRadius: 26, borderTopRightRadius: 26 })
-    .fromTo(cardEl, { y: '100%' }, { y: 0, duration: 0.9, ease: 'power4.inOut' })
-    .to('#scene', { scale: 0.94, opacity: 0.5, duration: 0.9, ease: 'power4.inOut' }, 0)
+    .fromTo(cardEl, { y: '100%' }, { y: 0, duration: 0.9, ease: 'power4.inOut', overwrite: 'auto' })
+    .to('#scene', { scale: 0.94, opacity: 0.5, duration: 0.9, ease: 'power4.inOut', overwrite: 'auto' }, 0)
     .to(scrollEl, { borderTopLeftRadius: 0, borderTopRightRadius: 0, duration: 0.3 }, '-=0.1');
 }
 
 function closePage() {
+  if (animating) { pending = { action: 'close' }; return; }
   if (!open) return;
+  animating = true;
   open = false;
   currentPage = null;
   setActive('work');
   setWash(0);
+  playWorkMusic(); // back to the gallery → restore the work track
 
-  gsap.timeline({
+  currentTl?.kill();
+  currentTl = gsap.timeline({
     onComplete: () => {
       cardEl.style.visibility = 'hidden';
       cardEl.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('page-open');
+      settle();
     },
   })
     .set(scrollEl, { borderTopLeftRadius: 26, borderTopRightRadius: 26 })
-    .to(cardEl, { y: '100%', duration: 0.8, ease: 'power4.inOut' })
-    .to('#scene', { scale: 1, opacity: 1, duration: 0.8, ease: 'power4.inOut' }, 0);
+    .to(cardEl, { y: '100%', duration: 0.8, ease: 'power4.inOut', overwrite: 'auto' })
+    .to('#scene', { scale: 1, opacity: 1, duration: 0.8, ease: 'power4.inOut', overwrite: 'auto' }, 0);
 }
 
 export function initPages() {
@@ -166,7 +187,14 @@ export function initPages() {
     a.addEventListener('click', (e) => {
       e.preventDefault();
       if (a.dataset.spa === 'work') {
-        if (open) history.back(); // popstate slides the card away
+        // history.back() is async: popstate (which clears these guards)
+        // lands a tick later. Without the navigatingBack latch a second
+        // rapid Work click would fire a second back(), walking past the
+        // single SPA entry and the gallery base → full page reload.
+        if (open && !navigatingBack && history.state?.page) {
+          navigatingBack = true;
+          history.back(); // popstate slides the card away
+        }
       } else {
         openPage(a.dataset.spa, true);
       }
@@ -174,6 +202,7 @@ export function initPages() {
   });
 
   window.addEventListener('popstate', () => {
+    navigatingBack = false; // the in-flight back() has landed
     const path = location.pathname.replace(/\.html$/, '');
     const page = Object.keys(PAGES).find((p) =>
       path.endsWith(PAGES[p].replace(/\.html$/, ''))
@@ -183,7 +212,10 @@ export function initPages() {
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && open && !isLeadOpen()) history.back();
+    if (e.key === 'Escape' && open && !navigatingBack && !isLeadOpen() && history.state?.page) {
+      navigatingBack = true;
+      history.back();
+    }
   });
 
   scrollEl.addEventListener('scroll', onScroll, { passive: true });
