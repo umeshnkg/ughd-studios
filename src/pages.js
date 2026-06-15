@@ -13,6 +13,22 @@ const PAGES = {
   careers: '/careers.html',
 };
 
+// about.css / careers.css style the injected page-card content but aren't
+// needed for the gallery itself — so they're kept off the homepage's
+// critical render path and loaded on demand the first time a page opens.
+// These are dynamic import()s (not a hardcoded <link href="/src/...css">) so
+// Vite code-splits them and injects the real fingerprinted URLs; a literal
+// /src/*.css path 404s in the production build.
+let pageStylesPromise = null;
+function ensurePageStyles() {
+  if (pageStylesPromise) return pageStylesPromise;
+  pageStylesPromise = Promise.all([
+    import('./about.css'),
+    import('./careers.css'),
+  ]).catch(() => {}); // never block the page on a CSS failure
+  return pageStylesPromise;
+}
+
 let cardEl, scrollEl, contentEl;
 let open = false;
 let animating = false;
@@ -80,7 +96,10 @@ function cleanUrl(page) {
 
 async function loadPage(page) {
   if (pageCache[page]) return pageCache[page];
+  // make sure the page-card stylesheets are in before content is shown
+  ensurePageStyles();
   const html = await (await fetch(PAGES[page])).text();
+  await pageStylesPromise;
   const main = new DOMParser()
     .parseFromString(html, 'text/html')
     .querySelector('main');
