@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "dev:full": "wrangler pages dev --compatibility-date=2024-01-01 -- vite",
+    "optimize:images": "node scripts/optimize-images.mjs",
+    "prebuild": "node scripts/optimize-images.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "verify": "node scripts/verify.mjs"
@@ -20,6 +22,7 @@
   },
   "devDependencies": {
     "puppeteer-core": "^25.1.0",
+    "sharp": "^0.35.1",
     "vite": "^8.0.16",
     "wrangler": "^3.0.0"
   }
