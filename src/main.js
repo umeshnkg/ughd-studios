@@ -1318,6 +1318,12 @@ window.addEventListener('resize', () => {
   // filter is re-applied so the state carries across the rebuild.
   clearTimeout(gridResizeTimer);
   gridResizeTimer = setTimeout(() => {
+    // textures not yet built (fonts/format detection still pending) — nothing to rebuild
+    if (projectArt.length === 0) return;
+    // don't tear down the tile grid while the detail overlay is open; the
+    // camera is zoomed to a specific tile position and buildTiles() disposes
+    // every mesh, leaving the scene inconsistent until closeDetail runs
+    if (detailOpen) return;
     const prevCols = COLS;
     const prevRows = ROWS;
     applyGridSize();
