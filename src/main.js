@@ -9,20 +9,45 @@ import { initNavPill } from './navpill.js';
 // the (heavy) WebXR module graph, keeping it out of the gallery's first load.
 
 // ============================================================
+// Device capability flags — drive both quality tuning (low-end
+// phones get a lighter render path) and asset selection. Desktop
+// with a fine pointer is unaffected, so the look is identical there.
+// ============================================================
+const mq = (q) => window.matchMedia(q).matches;
+const COARSE_POINTER = mq('(pointer: coarse)');
+const LOW_CORES = (navigator.hardwareConcurrency || 8) <= 4;
+const SMALL_SCREEN = Math.min(window.innerWidth, window.innerHeight) <= 700;
+const REDUCED_MOTION = mq('(prefers-reduced-motion: reduce)');
+const conn = navigator.connection || {};
+const SLOW_NET = conn.saveData === true || /(^|-)(2g|3g)$/.test(conn.effectiveType || '');
+// a lighter render path: fewer blur taps, lower DPR, no MSAA, no hover haze
+const LOW_END = COARSE_POINTER || LOW_CORES || SMALL_SCREEN;
+const BLUR_TAPS = LOW_END ? 8 : 24;
+const RT_SAMPLES = LOW_END ? 0 : 4;
+// use the lighter @sm thumbnail tier on small screens or constrained links
+const USE_SM = SLOW_NET || SMALL_SCREEN;
+const DPR_RAW = window.devicePixelRatio || 1;
+// A coarse pointer alone marks even flagship phones as low-end, leaving
+// their GPU headroom (and screen resolution) unused. Treat high-DPR touch
+// devices (modern phones, DPR ≥ 2.5) as capable — render sharper and paint
+// larger card textures — while low-DPR / older devices keep the light path.
+const HI_DPR = COARSE_POINTER && DPR_RAW >= 2.5;
+
+// ============================================================
 // Constants
 // ============================================================
 // The gallery is a flat, uniform grid of cards that wraps seamlessly on
 // both axes — the sphere-like look comes entirely from a fisheye post
 // pass (barrel distortion + edge blur), the way phantom.land does it.
-const COLS = 12;
-const ROWS = 12;
 const TILE_W = 3.2;
 const TILE_H = 2.875; // matches the 1024×920 card texture ratio
 const GAP = 0; // tiles butt up against each other — one solid plane
 const STEP_X = TILE_W + GAP;
 const STEP_Y = TILE_H + GAP;
-const WRAP_W = COLS * STEP_X;
-const WRAP_H = ROWS * STEP_Y;
+// Grid dimensions are fitted to the viewport (see computeGridSize below):
+// desktop keeps a generous 12×12; phones use the minimum that still wraps
+// without a seam — far fewer tiles/draw calls — and rebuild on rotation.
+let COLS, ROWS, WRAP_W, WRAP_H;
 
 const CAM_Z = 11.0;
 const FOV = 50;
@@ -31,7 +56,10 @@ const ZOOM_Z = 4.4; // dolly distance when a card opens
 // The FOV is vertical, so a fixed CAM_Z keeps a constant number of ROWS
 // in view — on narrow/portrait screens that leaves barely one giant
 // column visible. Push the camera back until a minimum grid WIDTH fits.
-const MIN_VISIBLE_W = STEP_X * 3.4;
+// Touch screens show fewer, larger columns (~2.4 vs 3.4) so the card type
+// is legible and each tile gets more pixels — a slightly more zoomed-in,
+// immersive feel on phones.
+const MIN_VISIBLE_W = STEP_X * (COARSE_POINTER ? 2.4 : 3.4);
 
 function restZ() {
   const aspect = window.innerWidth / window.innerHeight;
@@ -43,6 +71,34 @@ function restZ() {
 function zoomZ() {
   return ZOOM_Z * (restZ() / CAM_Z);
 }
+
+// Size the grid to the current viewport: enough tiles to cover the visible
+// frustum (the corners are pinned by the lens, so they see the full,
+// un-magnified extent) plus a one-tile wrap margin so the seam never enters
+// view. Desktop keeps a fixed 12×12; phones get the minimum — which differs
+// per orientation, so the grid is rebuilt when these change (see resize).
+function computeGridSize() {
+  if (!COARSE_POINTER) return { cols: 12, rows: 12 };
+  const aspect = window.innerWidth / window.innerHeight;
+  const halfTan = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  const z = Math.max(CAM_Z, MIN_VISIBLE_W / (2 * halfTan * aspect));
+  const visW = 2 * z * halfTan * aspect;
+  const visH = 2 * z * halfTan;
+  const clamp = (n) => Math.max(4, Math.min(12, n));
+  return {
+    cols: clamp(Math.ceil(visW / STEP_X) + 1),
+    rows: clamp(Math.ceil(visH / STEP_Y) + 1),
+  };
+}
+
+function applyGridSize() {
+  const g = computeGridSize();
+  COLS = g.cols;
+  ROWS = g.rows;
+  WRAP_W = COLS * STEP_X;
+  WRAP_H = ROWS * STEP_Y;
+}
+applyGridSize();
 
 const LENS_K = 0.11; // barrel distortion strength
 const LENS_BLUR = 0.014; // edge blur radius (uv units)
@@ -58,6 +114,12 @@ const PARA_LERP = 0.045;
 
 const TEX_W = 1024;
 const TEX_H = 920;
+// Mobile paints each card below native res to cut texture memory + upload.
+// High-DPR phones (capable) get 0.75 so the small type + artwork stay
+// crisp on a 3× panel; lower-DPR mobile keeps 0.5; desktop stays 1×. All
+// paint math stays in the 1024×920 design space — a one-off ctx.scale()
+// on the smaller canvas handles the rest.
+const TEX_SCALE = HI_DPR ? 0.75 : LOW_END ? 0.5 : 1;
 
 // grid hairline — a card is ~400 screen px wide, so 4 texture px ≈ 1.5 px
 const GRID_LINE = 4;
@@ -119,7 +181,11 @@ try {
   buildStaticFallback();
   throw err; // halt the gallery module; chrome nav still works via <a href>
 }
-const DPR = Math.min(window.devicePixelRatio, LOW_END ? 1.5 : 2);
+// Rendering at half the device resolution on a 3× phone reads as a blurry,
+// shimmery upscale (and makes the thin grid lines flicker while panning).
+// Cap capable phones at 2 — still eases fill-rate vs native 3× — and leave
+// genuinely low-DPR / weak devices at 1.5.
+const DPR = Math.min(DPR_RAW, HI_DPR ? 2 : LOW_END ? 1.5 : 2);
 renderer.setPixelRatio(DPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -420,18 +486,47 @@ function paintCard(ctx, p, img, blur, haze) {
   ctx.fillRect(0, TEX_H - GRID_LINE, TEX_W, GRID_LINE);
 }
 
-// small, heavily blurred copy of the artwork for the hover haze
+// small, heavily blurred copy of the artwork for the hover haze.
+// Not ctx.filter = 'blur()': Safari (desktop and iOS, through 26.x) ships the
+// canvas filter attribute disabled by default and silently draws sharp.
+// Resampling the art down to a few pixels and back up low-passes it the same
+// way and renders identically in every browser.
 function makeBlurCanvas(img) {
-  const bc = document.createElement('canvas');
-  bc.width = 128;
-  bc.height = 115;
-  const bctx = bc.getContext('2d');
-  const s = Math.max(bc.width / img.width, bc.height / img.height);
-  const sw = img.width * s;
-  const sh = img.height * s;
-  bctx.filter = 'blur(9px)';
-  // overdraw past the edges so the blur has no transparent fringe
-  bctx.drawImage(img, (bc.width - sw) / 2 - 12, (bc.height - sh) / 2 - 12, sw + 24, sh + 24);
+  const stage = (w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return [c, c.getContext('2d')];
+  };
+
+  // step the artwork down by halves first — a big single-hop downscale
+  // aliases (bilinear skips pixels), and that noise would be magnified
+  // straight back up into the haze
+  let src = img;
+  let w = img.width;
+  let h = img.height;
+  while (w / 2 >= 32) {
+    w = Math.round(w / 2);
+    h = Math.round(h / 2);
+    const [c, x] = stage(w, h);
+    x.drawImage(src, 0, 0, w, h);
+    src = c;
+  }
+
+  // cover-fit into a tiny stage; this hard downscale is the blur
+  const [tiny, tctx] = stage(16, 14);
+  const s = Math.max(tiny.width / w, tiny.height / h);
+  const sw = w * s;
+  const sh = h * s;
+  // overdraw past the edges so resampling has no transparent fringe
+  tctx.drawImage(src, (tiny.width - sw) / 2 - 2, (tiny.height - sh) / 2 - 2, sw + 4, sh + 4);
+
+  // upscale in two hops — one straight 8× bilinear jump leaves star-shaped
+  // interpolation artifacts that the card-sized stretch would magnify
+  const [mid, mctx] = stage(45, 40);
+  mctx.drawImage(tiny, 0, 0, mid.width, mid.height);
+  const [bc, bctx] = stage(128, 115);
+  bctx.drawImage(mid, 0, 0, bc.width, bc.height);
   return bc;
 }
 
@@ -451,21 +546,41 @@ const tileGeometry = new THREE.PlaneGeometry(TILE_W, TILE_H);
 
 let texturesLoaded = 0;
 const totalTextures = projects.length;
+// Reveal as soon as the first screenful of tiles has art instead of
+// blocking on all 34 downloads + paints + uploads; the rest keep
+// streaming in and pop onto their (already-visible) placeholder cards.
+const REVEAL_AT = Math.min(totalTextures, 14);
 const loaderPct = document.getElementById('loaderPct');
 const loaderBar = document.getElementById('loaderBar');
 
 function bumpLoader() {
   texturesLoaded++;
-  const pct = Math.round((texturesLoaded / totalTextures) * 100);
+  const pct = Math.round(Math.min(texturesLoaded / REVEAL_AT, 1) * 100);
   loaderPct.textContent = pct + '%';
   loaderBar.style.width = pct + '%';
-  if (texturesLoaded === totalTextures) onReady();
+  if (texturesLoaded === REVEAL_AT || texturesLoaded === totalTextures) onReady();
 }
 
 function makeCardTexture(cv) {
   const tex = new THREE.CanvasTexture(cv);
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  // anisotropic sampling keeps the thin grid hairlines from shimmering as
+  // the grid pans; 8× is plenty and cheap on modern mobile GPUs
+  tex.anisotropy = LOW_END ? Math.min(8, maxAniso) : maxAniso;
   return tex;
+}
+
+// A card-sized 2D canvas. On mobile the backing bitmap is physically
+// smaller (TEX_SCALE), but everything is still drawn in the 1024×920
+// design space via the one-off context scale, so paintCard() and its
+// callers stay resolution-agnostic.
+function makeCardCanvas() {
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(TEX_W * TEX_SCALE);
+  cv.height = Math.round(TEX_H * TEX_SCALE);
+  const ctx = cv.getContext('2d');
+  ctx.scale(TEX_SCALE, TEX_SCALE);
+  return { cv, ctx };
 }
 
 // MeshBasicMaterial with a saturation uniform so filtered-out cards
@@ -510,15 +625,47 @@ function setCardArt(card, art) {
   card.material.map = art.tex;
 }
 
-function buildCards() {
+// One CanvasTexture per project (shared by every tile showing it), painted
+// once and then streamed the real artwork. Independent of the tile grid, so
+// it survives grid rebuilds.
+function buildTextures() {
   for (const p of projects) {
-    const cv = document.createElement('canvas');
-    cv.width = TEX_W;
-    cv.height = TEX_H;
-    const ctx = cv.getContext('2d');
+    const { cv, ctx } = makeCardCanvas();
     paintCard(ctx, p, null, null, null);
     projectArt.push({ p, ctx, tex: makeCardTexture(cv), img: null, blur: null });
   }
+
+  // one artwork load per project — every duplicate updates for free.
+  // The loader still covers a full load on capable+fast clients (unchanged
+  // reveal); loadThumb just streams smaller, format-optimised bytes.
+  for (const art of projectArt) {
+    loadThumb(art.p, (img) => {
+      if (img) {
+        art.img = img;
+        art.blur = makeBlurCanvas(img);
+        paintCard(art.ctx, art.p, img, null, null);
+        art.tex.needsUpdate = true;
+      }
+      bumpLoader();
+    });
+  }
+}
+
+// (Re)build the tile meshes for the current COLS×ROWS. Called once at start
+// and again whenever the viewport-fitted grid size changes (orientation).
+// The per-project textures are reused; only the lightweight meshes/materials
+// are recreated. Any current filter is re-applied by the caller.
+function buildTiles() {
+  for (const c of cards) {
+    gsap.killTweensOf(c.material);
+    gsap.killTweensOf(c.material.color);
+    gsap.killTweensOf(c.uSat);
+    if (c.hoverUnit) releaseHover(c.hoverUnit);
+    group.remove(c.mesh);
+    c.material.dispose();
+  }
+  cards.length = 0;
+  hovered = null;
 
   homeDeal = dealProjects(COLS * ROWS);
   for (let r = 0; r < ROWS; r++) {
@@ -546,21 +693,6 @@ function buildCards() {
       mesh.userData.card = card;
       cards.push(card);
     }
-  }
-
-  // one artwork load per project — every duplicate updates for free.
-  // The loader still covers a full load on capable+fast clients (unchanged
-  // reveal); loadThumb just streams smaller, format-optimised bytes.
-  for (const art of projectArt) {
-    loadThumb(art.p, (img) => {
-      if (img) {
-        art.img = img;
-        art.blur = makeBlurCanvas(img);
-        paintCard(art.ctx, art.p, img, null, null);
-        art.tex.needsUpdate = true;
-      }
-      bumpLoader();
-    });
   }
 }
 
@@ -601,6 +733,21 @@ let hovered = null; // card object
 let detailOpen = false;
 let introDone = false;
 
+// ---- render-on-demand gate ----
+// The two render passes are skipped whenever nothing is moving. Interactions
+// and animations bump `wakeUntil`; the animate loop also keeps rendering while
+// drag/inertia/parallax is still settling or a tween/hover is live. On desktop
+// the idle drift keeps it settling forever, so that path renders every frame
+// exactly as before — the idling only kicks in on touch (drift is off there).
+const RENDER_EPS = 1e-4;
+const IDLE_FRAME_MS = 1000 / 30; // slow idle drift is throttled to ~30fps on phones
+let wakeUntil = 0;
+let renderedLastFrame = true;
+let lastRenderMs = 0;
+const wake = (ms = 700) => {
+  wakeUntil = Math.max(wakeUntil, performance.now() + ms);
+};
+
 canvas.addEventListener('pointerdown', (e) => {
   if (detailOpen || !introDone || isPageOpen()) return;
   dragging = true;
@@ -614,6 +761,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  wake(); // pointer moved → parallax (and hover) need a few frames to catch up
 
   if (!dragging) return;
   const now = performance.now();
@@ -634,13 +782,14 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', (e) => {
   if (!dragging) return;
   dragging = false;
+  wake(1500); // keep full frame-rate through the inertia fling
   canvas.classList.remove('is-dragging');
 
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
   const elapsed = performance.now() - downAt.t;
 
   if (moved < 6 && elapsed < 400) {
-    handleTap();
+    handleTap(e);
     return;
   }
 
@@ -659,6 +808,7 @@ window.addEventListener(
     const wpp = worldPerPixel();
     target.x -= e.deltaX * wpp;
     target.y += e.deltaY * wpp;
+    wake();
   },
   { passive: true }
 );
@@ -677,12 +827,12 @@ function raycastCard() {
 // into one of two dedicated canvases swapped onto the hovered card
 // (two, so a fade-out can finish while the next hover fades in).
 function makeHoverUnit() {
-  const cv = document.createElement('canvas');
-  cv.width = TEX_W;
-  cv.height = TEX_H;
-  return { ctx: cv.getContext('2d'), tex: makeCardTexture(cv), card: null };
+  const { cv, ctx } = makeCardCanvas();
+  return { ctx, tex: makeCardTexture(cv), card: null };
 }
-const hoverUnits = [makeHoverUnit(), makeHoverUnit()];
+// touch devices have no hover, so the loop never paints these — skip
+// allocating the two extra card-sized canvases/textures there
+const hoverUnits = COARSE_POINTER ? [] : [makeHoverUnit(), makeHoverUnit()];
 
 function releaseHover(unit) {
   if (!unit.card) return;
@@ -707,6 +857,7 @@ function acquireHover(card) {
 
 function setHover(card) {
   if (hovered === card) return;
+  wake();
   if (hovered) {
     const off = hovered;
     const unit = off.hoverUnit;
@@ -732,7 +883,12 @@ function setHover(card) {
   canvas.style.cursor = hovered ? 'pointer' : dragging ? 'grabbing' : 'grab';
 }
 
-function handleTap() {
+function handleTap(e) {
+  // Touch has no hover, so `pointer` (written only on pointermove) can be stale
+  // from the previous tap — a clean tap fires pointerdown→pointerup with no
+  // move. Hit-test the actual release point instead.
+  pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
   const card = raycastCard();
   if (card && !card.filtered) openDetail(card);
 }
@@ -746,6 +902,7 @@ const detailBack = document.getElementById('detailBack');
 function openDetail(card) {
   if (detailOpen) return;
   detailOpen = true;
+  wake(1200); // camera flies in + lens flattens over ~0.9s
   const p = card.project;
 
   document.getElementById('detailClient').textContent = p.client;
@@ -792,6 +949,7 @@ function openDetail(card) {
 
 function closeDetail() {
   if (!detailOpen) return;
+  wake(1200); // camera flies back out + lens re-forms
   unduckMusic();
   const tl = gsap.timeline({
     onComplete: () => {
@@ -823,6 +981,7 @@ gsap.set(detailEl, { y: '100%' });
 const filterBtn = document.getElementById('filterBtn');
 const filterPanel = document.getElementById('filterPanel');
 let activeFilter = 'ALL';
+let activeParentTag = null; // remembered so a grid rebuild can re-apply it
 
 filterTags.forEach((item) => {
   if (item.sub) {
@@ -889,6 +1048,8 @@ filterBtn.addEventListener('click', () => {
 
 function applyFilter(tag, btn, parentTag = null) {
   activeFilter = tag;
+  activeParentTag = parentTag;
+  wake(1600); // ripple: staggered opacity/desaturation tweens across the grid
   setHover(null);
 
   if (!parentTag) {
@@ -899,6 +1060,14 @@ function applyFilter(tag, btn, parentTag = null) {
     btn.classList.add('is-active');
   }
 
+  reassignGrid(tag, parentTag, true);
+}
+
+// Assign a project to every tile for the given filter: matched projects (one
+// each) take the tiles nearest the view centre, the rest refill greyed-out.
+// `animated` ripples the change in place; when false (a grid rebuild) it
+// snaps instantly so the freshly-built tiles land in the right state.
+function reassignGrid(tag, parentTag, animated) {
   const isAll = tag === 'ALL';
   const matchIdx = [];
   const restIdx = [];
@@ -923,8 +1092,6 @@ function applyFilter(tag, btn, parentTag = null) {
     }))
     .sort((a, b) => a.d - b.d);
 
-  // assignment: matched projects (one each) take the nearest tiles,
-  // the rest of the grid refills with non-matching projects
   const fillDeal = isAll
     ? null
     : dealProjects(Math.max(cards.length - matchIdx.length, 0), restIdx.length ? restIdx : matchIdx);
@@ -944,13 +1111,22 @@ function applyFilter(tag, btn, parentTag = null) {
       isMatch = false;
     }
     const art = projectArt[artIdx];
-    const delay = Math.min(d * 0.024, 0.55);
 
     gsap.killTweensOf(c.material);
     if (c.hoverUnit) releaseHover(c.hoverUnit);
     gsap.killTweensOf(c.material.color);
     c.material.color.setRGB(1, 1, 1);
 
+    if (!animated) {
+      setCardArt(c, art);
+      c.filtered = !isMatch;
+      gsap.killTweensOf(c.uSat);
+      c.uSat.value = isMatch ? 1 : 0;
+      c.material.opacity = isMatch ? 1 : 0.4;
+      return;
+    }
+
+    const delay = Math.min(d * 0.024, 0.55);
     gsap
       .timeline()
       .to(c.material, { opacity: 0, duration: 0.24, delay, ease: 'power2.in' })
@@ -1058,12 +1234,22 @@ function animate() {
   if (vrActive) return;
   requestAnimationFrame(animate);
 
+  // remember pre-update positions so we can tell how much the grid actually
+  // moved this frame (drives the render / idle-throttle decision below)
+  const preOffX = off.x;
+  const preOffY = off.y;
+  const preParaX = para.x;
+  const preParaY = para.y;
+
   off.x += (target.x - off.x) * LERP;
   off.y += (target.y - off.y) * LERP;
 
   // parallax: ease toward the cursor-driven offset (away from cursor)
-  const paraTargetX = detailOpen ? 0 : pointer.x * PARA_X;
-  const paraTargetY = detailOpen ? 0 : -pointer.y * PARA_Y;
+  // parallax is a fine-pointer affordance (grid drifts toward the cursor);
+  // touch has no hovering cursor, so disable it there — which also stops the
+  // grid being nudged toward the off-screen initial pointer before first touch
+  const paraTargetX = detailOpen || COARSE_POINTER ? 0 : pointer.x * PARA_X;
+  const paraTargetY = detailOpen || COARSE_POINTER ? 0 : -pointer.y * PARA_Y;
   para.x += (paraTargetX - para.x) * PARA_LERP;
   para.y += (paraTargetY - para.y) * PARA_LERP;
 
@@ -1081,7 +1267,9 @@ function animate() {
   }
 
   if (!dragging && !detailOpen && introDone && !isPageOpen()) {
-    // idle drift (stilled for reduced-motion users)
+    // slow idle drift — the cinematic wandering pan, on every device now
+    // (stilled only for reduced-motion users); on phones the render below
+    // is throttled to ~30fps so it stays gentle on the GPU/battery
     if (!REDUCED_MOTION) target.x -= 0.0012;
     // hover is a fine-pointer affordance — skip the per-frame raycast +
     // haze repaint on touch devices, where there's no real hover anyway
@@ -1093,13 +1281,45 @@ function animate() {
     setHover(null);
   }
 
-  renderer.setRenderTarget(sceneRT);
-  renderer.render(scene, camera);
-  renderer.setRenderTarget(null);
-  renderer.render(postScene, postCamera);
+  // Render-on-demand. `interacting` = a gesture / fast inertia / live tween /
+  // hover; `moved` = how far the grid actually shifted this frame. Draw every
+  // frame while interacting; when the only motion is the slow idle drift,
+  // throttle to ~30fps on phones (imperceptible for so gentle a pan, but half
+  // the GPU); when nothing moves, draw one last frame then let the GPU idle.
+  const nowMs = performance.now();
+  const interacting =
+    dragging ||
+    nowMs < wakeUntil ||
+    !introDone ||
+    gsap.isTweening(view) ||
+    gsap.isTweening(lens.k) ||
+    gsap.isTweening(lens.blur) ||
+    hoverUnits.some((u) => u.card);
+  const moved =
+    Math.abs(off.x - preOffX) +
+    Math.abs(off.y - preOffY) +
+    Math.abs(para.x - preParaX) +
+    Math.abs(para.y - preParaY);
+  const changing = interacting || moved > RENDER_EPS;
+
+  let doRender;
+  if (!changing) doRender = renderedLastFrame; // one trailing frame, then idle
+  else if (COARSE_POINTER && !interacting) doRender = nowMs - lastRenderMs >= IDLE_FRAME_MS;
+  else doRender = true;
+
+  if (doRender) {
+    renderer.setRenderTarget(sceneRT);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.render(postScene, postCamera);
+    lastRenderMs = nowMs;
+  }
+  renderedLastFrame = changing;
 }
 
+let gridResizeTimer = null;
 window.addEventListener('resize', () => {
+  wake();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   lens.aspect.value = camera.aspect;
@@ -1111,12 +1331,34 @@ window.addEventListener('resize', () => {
   if (!detailOpen && introDone && !gsap.isTweening(view)) {
     view.z = restZ();
   }
+  // Re-fit the grid to the new viewport (debounced so orientation changes and
+  // the mobile URL-bar show/hide don't thrash). Only rebuild when the fitted
+  // dimensions actually change; the shared textures are reused, and any live
+  // filter is re-applied so the state carries across the rebuild.
+  clearTimeout(gridResizeTimer);
+  gridResizeTimer = setTimeout(() => {
+    // textures not yet built (fonts/format detection still pending) — nothing to rebuild
+    if (projectArt.length === 0) return;
+    // don't tear down the tile grid while the detail overlay is open; the
+    // camera is zoomed to a specific tile position and buildTiles() disposes
+    // every mesh, leaving the scene inconsistent until closeDetail runs
+    if (detailOpen) return;
+    const prevCols = COLS;
+    const prevRows = ROWS;
+    applyGridSize();
+    if (COLS !== prevCols || ROWS !== prevRows) {
+      buildTiles();
+      if (activeFilter !== 'ALL') reassignGrid(activeFilter, activeParentTag, false);
+      wake();
+    }
+  }, 250);
 });
 
 // wait for fonts so canvas labels render with the right typefaces, and
 // resolve AVIF/WebP support before requesting any thumbnails
 Promise.all([document.fonts.ready, detectImageFormat()]).then(() => {
-  buildCards();
+  buildTextures();
+  buildTiles();
   animate();
 
   // Progressive enhancement: a Quest browser gets an "Enter VR" button.

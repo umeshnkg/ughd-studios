@@ -233,6 +233,7 @@ body.page {
   border-radius: 999px;
   padding: 10px 22px;
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 .studio__photo--us {
   background:
