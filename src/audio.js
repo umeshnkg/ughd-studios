@@ -7,11 +7,12 @@
 // ============================================================
 import gsap from 'gsap';
 
-const MUSIC_VOL = 0.18;
+const MUSIC_VOL = 0.12;
 const STORAGE_KEY = 'ughd_bgmusic';
 
-// Background music preference persists across sessions; defaults OFF
-let bgMusicOn = localStorage.getItem(STORAGE_KEY) === 'true';
+// Background music preference persists across sessions; defaults ON
+// (only an explicit "false" the user saved keeps it off)
+let bgMusicOn = localStorage.getItem(STORAGE_KEY) !== 'false';
 let ctx = null;
 let nodes = null; // { duck, hp, dry, wet, music }
 let washTarget = 0;
@@ -351,15 +352,23 @@ export function initAudio() {
 
   gsap.ticker.add(washTick);
 
-  // fast fade to silence when the tab goes inactive; fast fade back the
-  // instant the user returns
+  // Hard-pause when the tab/window is hidden — a phone lock or tab switch
+  // freezes rAF (so a gain fade would never run) and mobile keeps the
+  // <audio> element decoding in the background otherwise. Pausing the
+  // element is the only way to truly silence it. On return we resume the
+  // AudioContext (iOS suspends it while backgrounded) and fade back in.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       fadedByVisibility = true;
-      fadeOutMusic(0.2);
+      gsap.killTweensOf(nodes?.music.gain);
+      bgMusic.pause();
+      if (nodes) nodes.music.gain.value = 0; // return fades up from silence
     } else {
       fadedByVisibility = false;
-      if (!fadedByInactivity && bgMusicOn) fadeInMusic(0.35);
+      if (!fadedByInactivity && bgMusicOn) {
+        tryPlay(); // resumes the ctx + element
+        fadeInMusic(0.35);
+      }
     }
   });
 

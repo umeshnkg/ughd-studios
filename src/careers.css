@@ -252,11 +252,14 @@
   .careers-hero,
   .openroles,
   .jobdetail {
-    grid-template-columns: 1fr;
+    /* minmax(0, …) so the single track can't be forced wider than the
+       viewport by intrinsic content (the auto-fill .rolegrid otherwise
+       blows the track out to ~950px and creates a horizontal scroll). */
+    grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
   .valuerow {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
     padding: 44px 0;
   }
