@@ -126,25 +126,6 @@ const GRID_LINE = 4;
 const GRID_LINE_COLOR = 'rgba(255, 255, 255, 0.32)';
 
 // ============================================================
-// Device capability flags — drive both quality tuning (low-end
-// phones get a lighter render path) and asset selection. Desktop
-// with a fine pointer is unaffected, so the look is identical there.
-// ============================================================
-const mq = (q) => window.matchMedia(q).matches;
-const COARSE_POINTER = mq('(pointer: coarse)');
-const LOW_CORES = (navigator.hardwareConcurrency || 8) <= 4;
-const SMALL_SCREEN = Math.min(window.innerWidth, window.innerHeight) <= 700;
-const REDUCED_MOTION = mq('(prefers-reduced-motion: reduce)');
-const conn = navigator.connection || {};
-const SLOW_NET = conn.saveData === true || /(^|-)(2g|3g)$/.test(conn.effectiveType || '');
-// a lighter render path: fewer blur taps, lower DPR, no MSAA, no hover haze
-const LOW_END = COARSE_POINTER || LOW_CORES || SMALL_SCREEN;
-const BLUR_TAPS = LOW_END ? 12 : 24;
-const RT_SAMPLES = LOW_END ? 0 : 4;
-// use the lighter @sm thumbnail tier on small screens or constrained links
-const USE_SM = SLOW_NET || SMALL_SCREEN;
-
-// ============================================================
 // Scene setup
 // ============================================================
 const canvas = document.getElementById('scene');
