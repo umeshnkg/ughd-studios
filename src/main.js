@@ -140,8 +140,12 @@ function buildStaticFallback() {
   grid.className = 'fallback-grid';
   grid.innerHTML = projects
     .map((p) => {
-      const href = p.youtube ? `https://www.youtube.com/watch?v=${p.youtube}` : p.img;
-      return `<a class="fallback-card" href="${href}"${p.youtube ? ' target="_blank" rel="noopener"' : ''}>
+      const watch = p.vimeo
+        ? `https://vimeo.com/${p.vimeo}`
+        : p.youtube
+          ? `https://www.youtube.com/watch?v=${p.youtube}`
+          : null;
+      return `<a class="fallback-card" href="${watch || p.img}"${watch ? ' target="_blank" rel="noopener"' : ''}>
         <picture>
           <source srcset="/thumbs/opt/${p.slug}.avif" type="image/avif" />
           <source srcset="/thumbs/opt/${p.slug}.webp" type="image/webp" />
@@ -895,7 +899,12 @@ function openDetail(card) {
   document.getElementById('detailDesc').textContent = describe(p);
 
   const media = document.getElementById('detailMedia');
-  if (p.youtube) {
+  if (p.vimeo) {
+    // title/byline/portrait off strips the player chrome so the embed sits
+    // closer to the rest of the site; dnt=1 keeps Vimeo from setting
+    // tracking cookies
+    media.innerHTML = `<iframe src="https://player.vimeo.com/video/${p.vimeo}?autoplay=1&title=0&byline=0&portrait=0&dnt=1" title="${p.title}" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>`;
+  } else if (p.youtube) {
     media.innerHTML = `<iframe src="https://www.youtube.com/embed/${p.youtube}?autoplay=1&rel=0" title="${p.title}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
   } else {
     // <picture> lets the browser pick AVIF/WebP and fall back to the
@@ -911,7 +920,7 @@ function openDetail(card) {
   detailEl.style.visibility = 'visible';
 
   // a video is about to autoplay — get the music out of the way fast
-  if (p.youtube) duckMusic();
+  if (p.vimeo || p.youtube) duckMusic();
 
   // fly the camera into the tile while the lens flattens out,
   // then slide the page in

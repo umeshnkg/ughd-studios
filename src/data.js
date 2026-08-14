@@ -5,6 +5,14 @@
 // dropped in public/reels/). The VR focus view plays it with sound;
 // without it the focus view shows the still artwork. YouTube can't be
 // used here — it won't texture into WebGL inside a headset.
+//
+// Optional `vimeo` field: a Vimeo video ID, played as an iframe in the
+// detail modal. Mutually exclusive with `youtube` in practice; if both
+// are set the modal prefers `vimeo`. Like YouTube it can't texture into
+// WebGL, so it's no use to the VR view — that still needs `video`.
+//
+// Optional `desc` field: hand-written copy for the detail modal. Overrides
+// the generated sentence from describe().
 
 export const projects = [
   {
@@ -331,30 +339,36 @@ export const projects = [
     slug: 'bep-concert-visuals',
     client: 'Black Eyed Peas',
     title: 'CONCERT VISUALS',
-    tags: ['MUSIC VIDEO', 'MOTION'],
-    year: 2022,
+    tags: ['AI', 'MUSIC VIDEO', 'MOTION'],
+    year: 2025,
     youtube: null,
+    vimeo: '1218308402',
     img: '/thumbs/bep-concert-visuals.jpg',
+    desc: 'Full concert visuals produced for the Black Eyed Peas’ 2025 tour, blending AI-generated imagery with iconic moments from their music videos. The result is a high-energy collage that reimagines decades of visuals into one cohesive live experience, honoring their legacy while pushing it forward.',
     source: 'lyricvideo.tv',
   },
   {
     slug: 'boots-giant-monsters',
     client: 'BOOTS',
     title: 'GIANT MONSTERS',
-    tags: ['LYRIC VIDEO', 'ALTERNATIVE', 'MOTION'],
-    year: 2019,
+    tags: ['AI', 'LYRIC VIDEO', 'ALTERNATIVE', 'MOTION'],
+    year: 2026,
     youtube: null,
+    vimeo: '1218308706',
     img: '/thumbs/boots-giant-monsters.jpg',
+    desc: 'Giant Monsters is a surreal music video built around giant cartoon monsters attacking the city. The visuals are set to a pulsing retro neon and eerie, marching rhythm, a surreal nightmare city, turning the relentless “boots, boots, boots” into a loud, cinematic descent into madness.',
     source: 'lyricvideo.tv',
   },
   {
     slug: 'j-mcallister-im-free',
-    client: 'J McAllister',
+    client: '1K PHEW ft. James McAllister',
     title: "I'M FREE",
-    tags: ['LYRIC VIDEO', 'POP'],
-    year: 2024,
+    tags: ['AI', 'MUSIC VIDEO', '3D'],
+    year: 2027,
     youtube: null,
+    vimeo: '1218309002',
     img: '/thumbs/j-mcallister-im-free.jpg',
+    desc: '3D animation style music video produced for 1K PHEW. An upcoming single, “I’M FREE”, featuring James McAllister, is a song about his back story, rise, and Faith Over Fear ministry work. The California beach themed visual is to be released next summer along with their dedicated FOF concert.',
     source: 'lyricvideo.tv',
   },
   {
@@ -369,17 +383,44 @@ export const projects = [
   },
   {
     slug: 'cyberpunk-2077-tokyo-dreams',
-    client: 'Cyberpunk 2077',
-    title: 'TOKYO DREAMS',
-    tags: ['MOTION', '3D'],
+    client: 'UGHD Studios',
+    title: 'CYBERPUNK 2077 — TOKYO DREAMS',
+    tags: ['AI', 'MOTION', '3D'],
     year: 2021,
-    youtube: null,
+    youtube: 'jkqtYypMl-A',
     img: '/thumbs/cyberpunk-2077-tokyo-dreams.jpg',
-    source: 'lyricvideo.tv',
+    desc: 'A Cyberpunk 2077 game inspired fan-fiction original created by the in-house production team. The story takes place in a dystopian Tokyo where society has unravelled under the grip of crime, corruption, and unchecked technological evolution. The Yakuza control the city from the shadows, while an enigmatic, benevolent force powered by a mysterious new tech lurks beneath the surface.',
+    source: 'ughdstudios.com',
+  },
+  {
+    slug: 'atiye-near-future',
+    client: 'ATIYE',
+    title: 'NEAR FUTURE',
+    tags: ['AI', 'MUSIC VIDEO', 'MOTION'],
+    year: 2026,
+    youtube: null,
+    vimeo: '1218307660',
+    img: '/thumbs/atiye-near-future.jpg',
+    desc: 'Full AI-generated music video produced for the young Turkish artist ATIYE, for the title track of her next album “Near Future” coming this fall. It’s a surreal visual heavily inspired by the lime and yellow colour accents of her cover artwork.',
+    source: 'ughdstudios.com',
+  },
+  {
+    slug: 'kharita-something-just-like-this',
+    client: 'Kharita',
+    title: 'SOMETHING JUST LIKE THIS',
+    tags: ['AI', 'MUSIC VIDEO'],
+    year: 2026,
+    youtube: 'jGTVQLunzpg',
+    img: '/thumbs/kharita-something-just-like-this.jpg',
+    desc: 'Music video by Kharita performing a cover of “Something Just Like This” by The Chainsmokers & Coldplay. The 4K video is a high composited visualizer built with the help of AI tools while preserving the original brushstrokes and artform of Kharita, the singer.',
+    source: 'ughdstudios.com',
   },
 ];
 
 export function describe(p) {
+  // A hand-written `desc` always wins — the generated copy below is only a
+  // fallback for entries that never got one.
+  if (p.desc) return p.desc;
   const type = p.tags.includes('ARTWORK')
     ? 'Cover artwork designed'
     : p.tags.includes('PROMO')
@@ -392,6 +433,7 @@ export function describe(p) {
 
 export const filterTags = [
   { label: 'ALL' },
+  { label: 'AI' },
   {
     label: 'LYRIC VIDEO',
     sub: ['POP', 'RAP', 'EDM', 'ROCK', 'METAL', 'R&B', 'COUNTRY', 'ALTERNATIVE'],
